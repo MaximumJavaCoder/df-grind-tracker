@@ -1,13 +1,1 @@
-{
-  "name": "DF Dial-In",
-  "short_name": "DF Dial-In",
-  "description": "Track DF grinder settings, bean profiles, shot logs, and maintenance.",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#f7f3ec",
-  "theme_color": "#111111",
-  "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
-  ]
-}
+{"name":"DF Dial-In","short_name":"DF Dial-In","start_url":"./","display":"standalone","background_color":"#f7f7f4","theme_color":"#050505","description":"A DF Grinders bean and grind setting tracker.","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}
