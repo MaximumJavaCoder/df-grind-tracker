@@ -1,126 +1,81 @@
-const STORAGE_KEY = 'df_dial_v1';
 const $ = (sel, root=document) => root.querySelector(sel);
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+const uid = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random());
+const nowISO = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0,10);
-const fmtDate = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '—';
-
+const storeKey = 'dfDialV2';
+const defaultRoasters = ['Archive Coffee','Pirates of Coffee','Black & White Coffee Roasters','Pilot Coffee Roasters','Detour Coffee','Sey Coffee','Luna Coffee','Hatch Crafted','September Coffee'];
+const origins = ['Brazil','Colombia','Ethiopia','Guatemala','Costa Rica','Honduras','Kenya','Rwanda','Peru','Mexico','Panama','El Salvador','Nicaragua','Indonesia','Yemen','Burundi'];
+const models = ['DF54 V4','DF54 V3','DF64 Gen 2','DF64V','DF83','DF83V','DC63','Other'];
 let state = load();
-let view = 'beans';
-let selectedBeanId = state.beans[0]?.id || null;
+let view = 'dashboard';
+let editing = null;
+let timer = {start:null, elapsed:0, int:null};
+let activeRulerInput = null;
 
 function load(){
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || seed(); }
-  catch { return seed(); }
+  const saved = localStorage.getItem(storeKey);
+  if(saved) return JSON.parse(saved);
+  return {theme:'light', account:null, grinders:[{id:uid(), model:'DF54 V4', name:'My DF54', zero:'', burrs:'Stock stainless', createdAt:nowISO()}], beans:[], shots:[], roasters: defaultRoasters.map(name=>({id:uid(), name, aliases:[norm(name)]})), maintenance:[{id:uid(), type:'Grinder clean', item:'My DF grinder', intervalDays:30, lastDone:today(), notify:true},{id:uid(), type:'Espresso machine clean', item:'Espresso machine', intervalDays:14, lastDone:today(), notify:true}]};
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-function seed(){ return { grinders: [], beans: [], shots: [] }; }
-function toast(msg){
-  const el = document.createElement('div'); el.className='toast'; el.textContent=msg; document.body.appendChild(el);
-  setTimeout(()=>el.remove(), 1800);
+function save(){ localStorage.setItem(storeKey, JSON.stringify(state)); document.documentElement.dataset.theme=state.theme; }
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2200); }
+function norm(s){ return (s||'').toLowerCase().replace(/coffee|roasters|roaster|co\.?|company|inc|ltd|the/g,'').replace(/[^a-z0-9]/g,'').trim(); }
+function lev(a,b){ const m=a.length,n=b.length,dp=Array.from({length:m+1},()=>Array(n+1).fill(0)); for(let i=0;i<=m;i++)dp[i][0]=i; for(let j=0;j<=n;j++)dp[0][j]=j; for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1)); return dp[m][n]; }
+function canonicalRoaster(input){
+  const clean = norm(input); if(!clean) return input;
+  let best = null, score = 999;
+  for(const r of state.roasters){ for(const a of r.aliases||[norm(r.name)]){ const d = lev(clean,a); if(d<score){score=d; best=r;} } }
+  if(best && (score<=2 || clean.includes(norm(best.name)) || norm(best.name).includes(clean))){ if(input.length > best.name.length && !/\b(coffee|roasters|roaster|co)\b/i.test(best.name)) best.name=input; if(!best.aliases.includes(clean)) best.aliases.push(clean); return best.name; }
+  const r={id:uid(), name:input, aliases:[clean]}; state.roasters.push(r); return r.name;
 }
-function bestShot(beanId){
-  const shots = state.shots.filter(s=>s.beanId===beanId);
-  return shots.find(s=>s.isBest) || shots[0] || null;
-}
-function beanShots(beanId){ return state.shots.filter(s=>s.beanId===beanId).sort((a,b)=> b.createdAt.localeCompare(a.createdAt)); }
-function grinderName(id){ return state.grinders.find(g=>g.id===id)?.name || 'No grinder'; }
-function suggestion(s){
-  const time = Number(s.time), ratio = Number(s.yieldOut) / Math.max(Number(s.doseIn), .01);
-  const taste = (s.taste || '').toLowerCase();
-  if (taste.includes('balanced') || taste.includes('good')) return 'Save this as a strong reference setting.';
-  if (taste.includes('sour') && time < 28) return 'Likely under-extracted: go finer by 0.2–0.5.';
-  if (taste.includes('bitter') && time > 32) return 'Likely over-extracted: go coarser by 0.2–0.5.';
-  if (time && time < 25) return 'Shot ran fast: go finer by 0.2–0.5.';
-  if (time && time > 35) return 'Shot ran slow: go coarser by 0.2–0.5.';
-  if (ratio > 2.5) return 'Long ratio. Consider stopping earlier or grinding slightly finer.';
-  return 'Looks close. Adjust by taste rather than time alone.';
-}
-
-function render(){
-  const app = $('#app');
-  app.innerHTML = `<main class="app">
-    <div class="header">
-      <div class="brand"><div><div class="logo">DF Dial</div><div class="subtitle">Grind memory for DF Grinders</div></div><button class="pill" id="exportBtn">Export</button></div>
-    </div>
-    ${view==='beans'?beansView():''}
-    ${view==='detail'?detailView():''}
-    ${view==='addBean'?beanForm():''}
-    ${view==='shot'?shotForm():''}
-    ${view==='grinders'?grindersView():''}
-  </main>
-  <nav class="tabs">
-    <button class="tab ${view==='beans'||view==='detail'?'active':''}" data-nav="beans">Beans</button>
-    <button class="tab ${view==='addBean'?'active':''}" data-nav="addBean">Add Bean</button>
-    <button class="tab ${view==='grinders'?'active':''}" data-nav="grinders">Grinders</button>
-  </nav>`;
-  bind();
-}
-
-function beansView(){
-  if(!state.beans.length) return `<div class="card empty"><div class="title">No beans yet</div><p>Add your first coffee, then log shots against it.</p><button class="btn" data-nav="addBean">Add first bean</button></div>${installCard()}`;
-  return `${installCard()}<div class="section-title">Bean profiles</div>` + state.beans.map(b=>{
-    const best = bestShot(b.id);
-    return `<div class="card bean-card" data-open="${b.id}">
-      <div class="row between"><div><h2 class="title">${esc(b.name)}</h2><div class="muted small">${esc(b.roaster||'Unknown roaster')} · ${esc(b.process||'')}</div></div><div class="right"><div class="big-number">${best?.grindSetting || '—'}</div><div class="tiny muted">setting</div></div></div>
-      <div class="tag">${esc(grinderName(b.grinderId))}</div><div class="tag">${esc(b.useType||'Espresso')}</div><div class="tag">Roasted ${fmtDate(b.roastDate)}</div>
-      ${best ? `<div class="status small" style="margin-top:12px">Best: ${best.doseIn}g in / ${best.yieldOut}g out / ${best.time}s</div>` : ''}
-    </div>`
-  }).join('');
-}
-function installCard(){ return `<div class="card install show"><b>Install on iPhone:</b><div class="small muted" style="margin-top:6px">Open this in Safari, tap Share, then “Add to Home Screen.”</div></div>`; }
-function detailView(){
-  const b = state.beans.find(x=>x.id===selectedBeanId); if(!b){ view='beans'; return beansView(); }
-  const shots = beanShots(b.id); const best=bestShot(b.id);
-  return `<button class="btn secondary inline" data-nav="beans">← Back</button>
-  <div class="card">
-    <div class="row between"><div><h1 class="title">${esc(b.name)}</h1><div class="muted">${esc(b.roaster||'Unknown roaster')}</div></div><button class="btn inline" data-nav="shot">Log Shot</button></div>
-    <div class="divider"></div><div class="grid2"><div><div class="label">Grinder</div>${esc(grinderName(b.grinderId))}</div><div><div class="label">Roast date</div>${fmtDate(b.roastDate)}</div></div>
-    <div class="tag">${esc(b.origin||'Origin not set')}</div><div class="tag">${esc(b.process||'Process not set')}</div><div class="tag">${esc(b.useType||'Espresso')}</div>
-    ${best ? `<div class="card compact" style="background:var(--card2)"><div class="label">Reference setting</div><div class="big-number accent">${best.grindSetting}</div><div class="small">${best.doseIn}g in / ${best.yieldOut}g out / ${best.time}s</div><div class="small muted" style="margin-top:6px">${esc(best.notes||'')}</div></div>`:''}
-  </div>
-  <div class="section-title">Shot history</div>
-  ${shots.length?shots.map(s=>`<div class="card shot"><div class="row between"><div><b>${s.grindSetting}</b> setting ${s.isBest?'<span class="accent">★ Best</span>':''}<div class="small muted">${fmtDate(s.date)}</div></div><button class="btn secondary inline" data-best="${s.id}">Make Best</button></div><div class="grid3" style="margin-top:10px"><div><div class="label">Dose</div>${s.doseIn}g</div><div><div class="label">Yield</div>${s.yieldOut}g</div><div><div class="label">Time</div>${s.time}s</div></div><div class="status small" style="margin-top:12px">${suggestion(s)}</div>${s.notes?`<p class="small muted">${esc(s.notes)}</p>`:''}</div>`).join(''):`<div class="card empty">No shots logged yet.</div>`}
-  <button class="btn danger" data-delete-bean="${b.id}">Delete bean</button>`;
-}
-function beanForm(){
-  return `<div class="card"><h1 class="title">Add bean</h1><form id="beanForm">
-    <div class="field"><label class="label">Bean / coffee name</label><input name="name" required placeholder="Brazil Natural"></div>
-    <div class="field"><label class="label">Roaster</label><input name="roaster" placeholder="ARCHIVE Coffee"></div>
-    <div class="grid2"><div class="field"><label class="label">Origin</label><input name="origin" placeholder="Brazil"></div><div class="field"><label class="label">Process</label><input name="process" placeholder="Natural"></div></div>
-    <div class="grid2"><div class="field"><label class="label">Roast date</label><input name="roastDate" type="date"></div><div class="field"><label class="label">Use</label><select name="useType"><option>Espresso</option><option>Filter</option><option>Both</option></select></div></div>
-    <div class="field"><label class="label">Grinder</label><select name="grinderId">${state.grinders.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}<option value="">Not set</option></select></div>
-    <button class="btn">Save Bean</button></form></div>`;
-}
-function shotForm(){
-  const b = state.beans.find(x=>x.id===selectedBeanId); if(!b){view='beans'; return beansView();}
-  return `<button class="btn secondary inline" data-nav="detail">← Back</button><div class="card"><h1 class="title">Log shot</h1><div class="muted">${esc(b.name)}</div><form id="shotForm">
-    <div class="grid2"><div class="field"><label class="label">Grind setting</label><input name="grindSetting" inputmode="decimal" required placeholder="16.8"></div><div class="field"><label class="label">Date</label><input name="date" type="date" value="${today()}"></div></div>
-    <div class="grid3"><div class="field"><label class="label">Dose in</label><input name="doseIn" inputmode="decimal" placeholder="18"></div><div class="field"><label class="label">Yield out</label><input name="yieldOut" inputmode="decimal" placeholder="40"></div><div class="field"><label class="label">Time</label><input name="time" inputmode="decimal" placeholder="30"></div></div>
-    <div class="field"><label class="label">Taste</label><select name="taste"><option>Balanced / good</option><option>Sour</option><option>Bitter</option><option>Thin</option><option>Harsh</option><option>Other</option></select></div>
-    <div class="field"><label class="label">Notes</label><textarea name="notes" placeholder="Slightly bitter, try 0.3 coarser next time"></textarea></div>
-    <div class="field row"><input style="width:auto" type="checkbox" name="isBest" checked><label>Save as reference setting</label></div>
-    <button class="btn">Save Shot</button></form></div>`;
-}
-function grindersView(){
-  return `<div class="card"><h1 class="title">Grinders</h1><form id="grinderForm">
-    <div class="field"><label class="label">Grinder name</label><input name="name" required placeholder="DF54 V4 - stock burrs"></div>
-    <div class="grid2"><div class="field"><label class="label">Model</label><select name="model"><option>DF54</option><option>DF64</option><option>DF64V</option><option>DF83</option><option>DF83V</option><option>Other</option></select></div><div class="field"><label class="label">Zero / chirp point</label><input name="zeroPoint" placeholder="0 or -3"></div></div>
-    <div class="field"><label class="label">Burrs / notes</label><input name="notes" placeholder="Stock stainless, SSP MP, Red Titanium..."></div><button class="btn">Add Grinder</button></form></div>
-    <div class="section-title">Saved grinders</div>${state.grinders.length?state.grinders.map(g=>`<div class="card compact"><div class="row between"><div><b>${esc(g.name)}</b><div class="small muted">${esc(g.model)} · zero ${esc(g.zeroPoint||'not set')}</div><div class="small muted">${esc(g.notes||'')}</div></div><button class="btn danger inline" data-delete-grinder="${g.id}">Delete</button></div></div>`).join(''):`<div class="card empty">No grinders yet. Add your DF54, DF64, or DF83 first.</div>`}`;
-}
-
-function bind(){
-  document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{view=b.dataset.nav; render();});
-  document.querySelectorAll('[data-open]').forEach(c=>c.onclick=()=>{selectedBeanId=c.dataset.open; view='detail'; render();});
-  $('#exportBtn')?.addEventListener('click',()=>{ const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='df-dial-backup.json'; a.click(); });
-  $('#beanForm')?.addEventListener('submit', e=>{e.preventDefault(); const d=Object.fromEntries(new FormData(e.target)); const b={id:uid(),...d,createdAt:new Date().toISOString()}; state.beans.unshift(b); selectedBeanId=b.id; save(); view='detail'; render(); toast('Bean saved');});
-  $('#shotForm')?.addEventListener('submit', e=>{e.preventDefault(); const d=Object.fromEntries(new FormData(e.target)); if(d.isBest){state.shots.forEach(s=>{if(s.beanId===selectedBeanId)s.isBest=false})} const s={id:uid(),beanId:selectedBeanId,...d,isBest:!!d.isBest,createdAt:new Date().toISOString()}; state.shots.unshift(s); save(); view='detail'; render(); toast('Shot saved');});
-  $('#grinderForm')?.addEventListener('submit', e=>{e.preventDefault(); const d=Object.fromEntries(new FormData(e.target)); state.grinders.unshift({id:uid(),...d,createdAt:new Date().toISOString()}); save(); render(); toast('Grinder saved');});
-  document.querySelectorAll('[data-best]').forEach(b=>b.onclick=()=>{ const id=b.dataset.best; const shot=state.shots.find(s=>s.id===id); state.shots.forEach(s=>{if(s.beanId===shot.beanId)s.isBest=false}); shot.isBest=true; save(); render(); toast('Reference setting updated');});
-  document.querySelectorAll('[data-delete-bean]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this bean and its shots?')){state.beans=state.beans.filter(x=>x.id!==b.dataset.deleteBean); state.shots=state.shots.filter(x=>x.beanId!==b.dataset.deleteBean); selectedBeanId=state.beans[0]?.id||null; save(); view='beans'; render();}});
-  document.querySelectorAll('[data-delete-grinder]').forEach(b=>b.onclick=()=>{state.grinders=state.grinders.filter(x=>x.id!==b.dataset.deleteGrinder); save(); render();});
-}
-function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
-
-if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
-render();
+function beanById(id){ return state.beans.find(b=>b.id===id); }
+function shotsForBean(id){ return state.shots.filter(s=>s.beanId===id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)); }
+function lastShot(beanId){ return shotsForBean(beanId)[0]; }
+function bestShot(beanId){ return shotsForBean(beanId).find(s=>s.isBest) || shotsForBean(beanId).find(s=>s.rating==='Good') || lastShot(beanId); }
+function escapeHtml(s=''){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function appHeader(){return `<section class="hero"><div class="brand"><div class="logo">DF</div><div><h1>DF Dial-In</h1><p class="tagline">Bean memory, shot timer, and grinder care for DF Grinders.</p></div></div><div class="top-actions"><button class="pill gold" onclick="openShot()">Log shot</button><button class="pill" onclick="openBean()">New bean</button><button class="pill" onclick="fakeGoogle()">${state.account?'Signed in: '+escapeHtml(state.account.name):'Connect Google'}</button></div></section>`}
+function tabs(){return `<nav class="tabs">${[['dashboard','Home'],['beans','Beans'],['shot','Shot'],['maintenance','Care'],['settings','Settings']].map(([id,label])=>`<button class="tab ${view===id?'active':''}" onclick="go('${id}')">${label}</button>`).join('')}</nav>`}
+function go(v){view=v; render();}
+function render(){ save(); $('#app').innerHTML = appHeader() + (view==='dashboard'?dashboard():view==='beans'?beansView():view==='shot'?shotView():view==='maintenance'?maintenanceView():settingsView()) + tabs(); bindSuggests(); checkMaintenance(false); }
+function dashboard(){ const recent = state.beans.slice().sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt)).slice(0,3); return `<div class="grid two"><section class="card"><h2>Recent beans</h2>${recent.length?`<div class="list">${recent.map(beanCard).join('')}</div>`:'<p class="small">No beans yet. Add one or log a shot to create the first profile.</p>'}</section><section class="card"><h2>Next cleaning</h2>${maintenanceList(true)}</section><section class="card"><h2>Shot assistant</h2><p class="notice">The app uses your previous shot time, ratio, and taste input to suggest finer, coarser, or hold. Production cloud login and shared roaster matching need a backend; this prototype stores data locally.</p></section></div>`; }
+function beanCard(b){ const best=bestShot(b.id); return `<div class="card bean-card"><div><div class="bean-title">${escapeHtml(b.name||'Unnamed bean')}</div><div class="meta">${escapeHtml(b.roaster||'Unknown roaster')} · ${escapeHtml(b.origin||'Origin n/a')} · ${escapeHtml(b.roastLevel||'Roast n/a')}</div>${best?`<div class="best"><b>Reference:</b> ${best.grind||'—'} · ${best.dose||'—'}g in / ${best.yieldOut||'—'}g out / ${best.time||'—'}s</div>`:''}<div class="actions"><button class="btn secondary" onclick="openBean('${b.id}')">Edit</button><button class="btn secondary" onclick="openShot('${b.id}')">Log shot</button><button class="btn secondary" onclick="viewBean('${b.id}')">History</button></div></div></div>`; }
+function beansView(){ return `<section class="card"><h2>Bean profiles</h2>${state.beans.length?`<div class="list">${state.beans.map(beanCard).join('')}</div>`:'<p class="small">No bean profiles yet.</p>'}</section>`; }
+function viewBean(id){ const b=beanById(id); if(!b)return; view='beans'; render(); const shots=shotsForBean(id); showModal(`<h2>${escapeHtml(b.name)}</h2><p class="meta">${escapeHtml(b.roaster)} · ${escapeHtml(b.origin)} · ${escapeHtml(b.roastLevel)}</p><div class="actions"><button class="btn" onclick="closeModal();openShot('${id}')">Log shot</button><button class="btn secondary" onclick="closeModal();openBean('${id}')">Edit bean</button></div><h3>Shot history</h3><div class="list">${shots.map(shotCard).join('')||'<p class="small">No shots yet.</p>'}</div>`); }
+function shotCard(s){return `<div class="card"><b>${s.grind||'—'} setting</b> · ${s.dose||'—'}g → ${s.yieldOut||'—'}g · ${s.time||'—'}s <span class="small">${new Date(s.createdAt).toLocaleDateString()}</span><p class="small">${escapeHtml(s.rating||'')} ${escapeHtml(s.taste||'')}</p><p>${escapeHtml(s.suggestion||'')}</p><div class="actions"><button class="btn secondary" onclick="openShot('${s.beanId}','${s.id}')">Edit</button><button class="btn secondary" onclick="markBest('${s.id}')">Set best</button></div></div>`}
+function shotView(){return `<section class="card"><h2>Log a shot</h2><p class="small">Select a bean and the form will preload the last used setting for that bean.</p>${shotForm()}</section>`;}
+function shotForm(beanId='', shotId=''){ const shot=state.shots.find(s=>s.id===shotId)||{}; const b=beanById(beanId||shot.beanId) || {}; const last=lastShot(b.id)||{}; const beanOptions = `<option value="">Create new bean…</option>` + state.beans.map(x=>`<option value="${x.id}" ${(b.id===x.id)?'selected':''}>${escapeHtml(x.name)} — ${escapeHtml(x.roaster||'')}</option>`).join(''); return `<div><label>Bean</label><select id="shotBean" onchange="shotBeanChanged(this.value)">${beanOptions}</select><div id="newBeanMini" style="display:${b.id?'none':'block'}"><label>New bean name</label><input id="miniBeanName" placeholder="Brazil Natural"><label>Roaster</label><div class="suggestions"><input id="miniRoaster" data-suggest="roaster" placeholder="Archive Coffee"></div></div><div class="row"><div><label>Grind setting</label><input id="shotGrind" inputmode="decimal" value="${shot.grind||last.grind||''}" placeholder="16.8" onpointerdown="startRuler(event,this)"></div><div><label>Roast level</label><select id="shotRoast"><option></option><option ${b.roastLevel==='Light'?'selected':''}>Light</option><option ${b.roastLevel==='Medium'?'selected':''}>Medium</option><option ${b.roastLevel==='Dark'?'selected':''}>Dark</option></select></div></div><div class="row3"><div><label>Dose in g</label><input id="shotDose" inputmode="decimal" value="${shot.dose||last.dose||18}"></div><div><label>Yield out g</label><input id="shotYield" inputmode="decimal" value="${shot.yieldOut||last.yieldOut||36}"></div><div><label>Time sec</label><input id="shotTime" inputmode="decimal" value="${shot.time||''}"></div></div><div class="timer" id="timerDisplay">00.0</div><div class="timer-actions"><button class="btn secondary" onclick="timerStart()">Start</button><button class="btn secondary" onclick="timerStop()">Stop</button><button class="btn secondary" onclick="timerReset()">Reset</button></div><label>Taste / result</label><select id="shotRating"><option ${shot.rating===''?'selected':''}></option><option ${shot.rating==='Good'?'selected':''}>Good</option><option ${shot.rating==='Too fast / sour'?'selected':''}>Too fast / sour</option><option ${shot.rating==='Too slow / bitter'?'selected':''}>Too slow / bitter</option><option ${shot.rating==='Thin'?'selected':''}>Thin</option><option ${shot.rating==='Harsh'?'selected':''}>Harsh</option></select><label>Notes</label><textarea id="shotTaste">${escapeHtml(shot.taste||'')}</textarea><button class="btn full" onclick="saveShot('${shotId}')">Save shot</button></div>`; }
+function openShot(beanId='', shotId=''){ editing={beanId,shotId}; showModal(`<h2>${shotId?'Edit shot':'Log shot'}</h2>${shotForm(beanId,shotId)}`); bindSuggests(); }
+function shotBeanChanged(id){ const wrap=$('#newBeanMini'); if(wrap) wrap.style.display=id?'none':'block'; const s=lastShot(id); if(s){ $('#shotGrind').value=s.grind||''; $('#shotDose').value=s.dose||18; $('#shotYield').value=s.yieldOut||36; } }
+function saveShot(shotId=''){ let beanId=$('#shotBean')?.value; if(!beanId){ const name=$('#miniBeanName').value.trim() || 'Untitled bean'; const roaster=canonicalRoaster($('#miniRoaster').value.trim()); const bean={id:uid(), name, roaster, origin:'', roastLevel:$('#shotRoast').value, createdAt:nowISO(), updatedAt:nowISO()}; state.beans.push(bean); beanId=bean.id; } else { const b=beanById(beanId); if(b && $('#shotRoast').value) b.roastLevel=$('#shotRoast').value; if(b) b.updatedAt=nowISO(); }
+ const data={beanId, grind:$('#shotGrind').value, dose:$('#shotDose').value, yieldOut:$('#shotYield').value, time:$('#shotTime').value, rating:$('#shotRating').value, taste:$('#shotTaste').value, suggestion:suggest(), createdAt:nowISO()}; if(shotId){ Object.assign(state.shots.find(s=>s.id===shotId), data); } else state.shots.push({id:uid(), ...data}); closeModal(); view='dashboard'; render(); toast('Shot saved'); }
+function suggest(){ const r=$('#shotRating')?.value||''; const time=parseFloat($('#shotTime')?.value); const ratio=(parseFloat($('#shotYield')?.value)||0)/(parseFloat($('#shotDose')?.value)||1); if(r.includes('fast')||time&&time<24) return 'Suggestion: grind finer next shot. Try 0.2–0.5 lower/higher depending on your DF dial direction.'; if(r.includes('slow')||time&&time>36) return 'Suggestion: grind coarser next shot by about 0.2–0.5.'; if(r==='Thin'||ratio>2.5) return 'Suggestion: reduce yield slightly or grind a touch finer.'; if(r==='Harsh') return 'Suggestion: try a slightly coarser grind or lower yield.'; if(r==='Good') return 'Suggestion: save this as your reference setting for this bean.'; return 'Suggestion: compare against the previous shot and adjust one variable at a time.'; }
+function markBest(id){ const s=state.shots.find(x=>x.id===id); state.shots.filter(x=>x.beanId===s.beanId).forEach(x=>x.isBest=false); s.isBest=true; save(); render(); toast('Reference setting saved'); }
+function openBean(id=''){ const b=beanById(id)||{}; showModal(`<h2>${id?'Edit bean':'New bean'}</h2><label>Bean name</label><input id="beanName" value="${escapeHtml(b.name||'')}" placeholder="Brazil Natural"><label>Roaster</label><div class="suggestions"><input id="beanRoaster" data-suggest="roaster" value="${escapeHtml(b.roaster||'')}" placeholder="Archive Coffee"></div><label>Origin</label><div class="suggestions"><input id="beanOrigin" data-suggest="origin" value="${escapeHtml(b.origin||'')}" placeholder="Brazil"></div><div class="row"><div><label>Roast date</label><input id="beanRoastDate" type="date" value="${b.roastDate||''}"></div><div><label>Roast level</label><select id="beanRoastLevel"><option></option><option ${b.roastLevel==='Light'?'selected':''}>Light</option><option ${b.roastLevel==='Medium'?'selected':''}>Medium</option><option ${b.roastLevel==='Dark'?'selected':''}>Dark</option></select></div></div><label>Grinder</label><select id="beanGrinder">${state.grinders.map(g=>`<option value="${g.id}" ${b.grinderId===g.id?'selected':''}>${escapeHtml(g.name)} — ${escapeHtml(g.model)}</option>`).join('')}</select><label>Notes</label><textarea id="beanNotes">${escapeHtml(b.notes||'')}</textarea><button class="btn full" onclick="saveBean('${id}')">Save bean</button>${id?'<button class="btn danger full" onclick="deleteBean(\''+id+'\')">Delete bean</button>':''}`); bindSuggests(); }
+function saveBean(id=''){ const data={name:$('#beanName').value.trim(), roaster:canonicalRoaster($('#beanRoaster').value.trim()), origin:$('#beanOrigin').value.trim(), roastDate:$('#beanRoastDate').value, roastLevel:$('#beanRoastLevel').value, grinderId:$('#beanGrinder').value, notes:$('#beanNotes').value, updatedAt:nowISO()}; if(id) Object.assign(beanById(id),data); else state.beans.push({id:uid(),...data,createdAt:nowISO()}); closeModal(); render(); toast('Bean saved'); }
+function deleteBean(id){ state.beans=state.beans.filter(b=>b.id!==id); state.shots=state.shots.filter(s=>s.beanId!==id); closeModal(); render(); }
+function maintenanceView(){return `<section class="card"><h2>Maintenance scheduler</h2><p class="small">iOS only shows notifications reliably for installed web apps while permissions are allowed; true background scheduled push needs a backend.</p><button class="btn secondary" onclick="askNotify()">Enable notifications</button>${maintenanceList(false)}<button class="btn full" onclick="addMaintenance()">Add maintenance item</button></section>`;}
+function maintenanceList(compact){ return `<div class="list">${state.maintenance.map(m=>{ const due=new Date(m.lastDone); due.setDate(due.getDate()+Number(m.intervalDays||0)); const overdue=due < new Date(); return `<div class="card"><b>${escapeHtml(m.type)}</b><div class="meta">${escapeHtml(m.item)} · every ${m.intervalDays} days</div><div class="${overdue?'status-due':'status-ok'}">${overdue?'Due now':'Due '+due.toLocaleDateString()}</div>${compact?'':`<div class="actions"><button class="btn secondary" onclick="doneMaint('${m.id}')">Mark done today</button><button class="btn secondary" onclick="editMaint('${m.id}')">Edit</button></div>`}</div>`}).join('')}</div>`; }
+function addMaintenance(){ editMaint(''); }
+function editMaint(id=''){ const m=state.maintenance.find(x=>x.id===id)||{}; showModal(`<h2>${id?'Edit':'Add'} maintenance</h2><label>Task</label><input id="mType" value="${escapeHtml(m.type||'')}"><label>Item</label><input id="mItem" value="${escapeHtml(m.item||'')}"><label>Interval days</label><input id="mDays" inputmode="numeric" value="${m.intervalDays||30}"><button class="btn full" onclick="saveMaint('${id}')">Save</button>`); }
+function saveMaint(id=''){ const data={type:$('#mType').value,item:$('#mItem').value,intervalDays:Number($('#mDays').value)||30,lastDone: today(),notify:true}; if(id) Object.assign(state.maintenance.find(x=>x.id===id),data); else state.maintenance.push({id:uid(),...data}); closeModal(); render(); }
+function doneMaint(id){ const m=state.maintenance.find(x=>x.id===id); m.lastDone=today(); render(); toast('Maintenance reset'); }
+function askNotify(){ if(!('Notification' in window)) return toast('Notifications not supported here'); Notification.requestPermission().then(p=>toast(p==='granted'?'Notifications enabled':'Notifications not enabled')); }
+function checkMaintenance(show=true){ if(!('Notification' in window)||Notification.permission!=='granted') return; const due=state.maintenance.filter(m=>{const d=new Date(m.lastDone); d.setDate(d.getDate()+Number(m.intervalDays)); return d<new Date() && m.notify;}); if(due.length && show) new Notification('DF Dial-In maintenance due',{body:due.map(d=>d.type).join(', ')}); }
+function settingsView(){ return `<section class="card"><h2>Settings</h2><label>Theme</label><select onchange="state.theme=this.value;render()"><option value="light" ${state.theme==='light'?'selected':''}>Light</option><option value="dark" ${state.theme==='dark'?'selected':''}>Dark</option></select><h3>Grinder profile</h3>${state.grinders.map(g=>`<div class="card"><b>${escapeHtml(g.name)}</b><div class="meta">${escapeHtml(g.model)} · ${escapeHtml(g.burrs||'')}</div></div>`).join('')}<button class="btn secondary full" onclick="editGrinder()">Edit grinder</button><h3>Data</h3><button class="btn secondary full" onclick="exportData()">Export backup JSON</button><label>Import backup</label><input type="file" accept="application/json" onchange="importData(this.files[0])"><p class="notice">Google account connection, cloud sync, shared roaster database, and cross-user roaster amalgamation need Firebase/Supabase or another backend. The UI and local logic are in place as a prototype.</p></section>`; }
+function editGrinder(){ const g=state.grinders[0]||{}; showModal(`<h2>Grinder</h2><label>Name</label><input id="gName" value="${escapeHtml(g.name||'')}"><label>Model</label><select id="gModel">${models.map(m=>`<option ${g.model===m?'selected':''}>${m}</option>`).join('')}</select><label>Burrs</label><input id="gBurrs" value="${escapeHtml(g.burrs||'')}"><label>Zero point notes</label><input id="gZero" value="${escapeHtml(g.zero||'')}"><button class="btn full" onclick="saveGrinder()">Save grinder</button>`); }
+function saveGrinder(){ state.grinders[0]=Object.assign(state.grinders[0]||{id:uid()}, {name:$('#gName').value,model:$('#gModel').value,burrs:$('#gBurrs').value,zero:$('#gZero').value}); closeModal(); render(); }
+function fakeGoogle(){ state.account = state.account ? null : {name:'Google prototype', email:'local-only'}; render(); toast(state.account?'Prototype account connected':'Signed out'); }
+function bindSuggests(){ $$('[data-suggest]').forEach(inp=>{ inp.oninput=()=>{ const list=inp.dataset.suggest==='origin'?origins:state.roasters.map(r=>r.name); const q=inp.value.toLowerCase(); const matches=list.filter(x=>x.toLowerCase().includes(q)).slice(0,6); let box=inp.parentElement.querySelector('.suggest-box'); if(box) box.remove(); if(!q||!matches.length)return; box=document.createElement('div'); box.className='suggest-box'; box.innerHTML=matches.map(m=>`<button type="button">${escapeHtml(m)}</button>`).join(''); inp.parentElement.appendChild(box); $$('button',box).forEach(b=>b.onclick=()=>{inp.value=b.textContent; box.remove();}); }; }); }
+function startRuler(e,input){ activeRulerInput=input; clearTimeout(input._hold); input._hold=setTimeout(()=>openRuler(input),250); input.onpointerup=()=>clearTimeout(input._hold); }
+function openRuler(input){ const val=parseFloat(input.value)||15; const ticks=[]; for(let i=0;i<=400;i++){ const v=i/10; ticks.push(`<div class="tick ${i%50===0?'major':i%10===0?'mid':''}" data-v="${v.toFixed(1)}">${i%50===0?`<span>${v}</span>`:''}</div>`); } const div=document.createElement('div'); div.className='ruler-pop'; div.id='rulerPop'; div.innerHTML=`<div class="ruler-head"><div><div class="small">Slide to set grind</div><div class="ruler-value" id="rulerVal">${val.toFixed(1)}</div></div><button class="btn" onclick="closeRuler()">Set</button></div><div class="ruler"><div class="ruler-marker"></div>${ticks.join('')}</div>`; document.body.appendChild(div); const r=$('.ruler',div); r.scrollLeft = val*120 - r.clientWidth/2; r.onscroll=()=>{ const v=Math.max(0, Math.min(40, (r.scrollLeft + r.clientWidth/2)/120)); $('#rulerVal').textContent=v.toFixed(1); input.value=v.toFixed(1); }; }
+function closeRuler(){ $('#rulerPop')?.remove(); }
+function timerStart(){ if(timer.int)return; timer.start=Date.now()-timer.elapsed; timer.int=setInterval(()=>{timer.elapsed=Date.now()-timer.start; $('#timerDisplay').textContent=(timer.elapsed/1000).toFixed(1).padStart(4,'0');},100); }
+function timerStop(){ clearInterval(timer.int); timer.int=null; const sec=(timer.elapsed/1000).toFixed(1); const f=$('#shotTime'); if(f) f.value=sec; }
+function timerReset(){ clearInterval(timer.int); timer={start:null,elapsed:0,int:null}; const d=$('#timerDisplay'); if(d)d.textContent='00.0'; }
+function showModal(html){ closeModal(); const b=document.createElement('div'); b.className='modal-backdrop'; b.id='modal'; b.innerHTML=`<div class="modal"><div style="text-align:right"><button class="pill" onclick="closeModal()">Close</button></div>${html}</div>`; document.body.appendChild(b); }
+function closeModal(){ $('#modal')?.remove(); timerReset(); }
+function exportData(){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'})); a.download='df-dial-backup.json'; a.click(); }
+function importData(file){ if(!file)return; const r=new FileReader(); r.onload=()=>{state=JSON.parse(r.result); save(); render();}; r.readAsText(file); }
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+document.documentElement.dataset.theme=state.theme; render();
