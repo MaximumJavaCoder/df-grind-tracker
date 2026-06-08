@@ -2,10 +2,20 @@
   "name": "df-dial",
   "version": "0.1.0",
   "private": true,
-  "description": "Local-first coffee recipe and dial-in PWA with a lightweight recipe sync API.",
+  "description": "Local-first coffee recipe and dial-in PWA with mobile packaging and a lightweight recipe sync API.",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check app.js && node --check server.js"
+    "check": "node --check app.js && node --check server.js",
+    "mobile:prepare": "node prepare-mobile.js",
+    "mobile:sync": "npm run mobile:prepare && npx cap sync",
+    "mobile:ios": "npx cap open ios",
+    "mobile:android": "npx cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0"
   }
 }

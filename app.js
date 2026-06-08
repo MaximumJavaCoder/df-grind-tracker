@@ -208,7 +208,7 @@ function timerBlock(m='Espresso'){
 /* v15 community recipe library and backend sync foundation */
 function navRecipeIcon(){return `<svg viewBox="0 0 24 24"><path d="M5 5.5h10.5a2.5 2.5 0 0 1 2.5 2.5v11H7.5A2.5 2.5 0 0 1 5 16.5v-11z M8 8.5h7 M8 12h7 M8 15.5h4 M18 8h1.5a1.5 1.5 0 0 1 1.5 1.5V19"/></svg>`}
 function nav(){return `<nav class="nav"><button class="${view==='home'?'active':''}" onclick="go('home')">${icon('home')}</button><button class="${view==='beans'?'active':''}" onclick="go('beans')">${icon('beans')}</button><button class="plus" onclick="go('log')">+</button><button class="${view==='recipes'?'active':''}" onclick="go('recipes')">${navRecipeIcon()}</button><button class="${view==='more'||view==='maintenance'?'active':''}" onclick="go('more')">${icon('more')}</button></nav>`}
-function defaultCommunityUser(){return {id:'local-'+uid(),displayName:'Home Barista',handle:'home-barista',bio:'Dialing in recipes with DF Dial'}}
+function defaultCommunityUser(){return {id:'local-'+uid(),displayName:'Home Barista',handle:'home-barista',email:'',bio:'Dialing in recipes with DF Dial',location:{city:'',region:'',country:''},equipment:{machine:'',grinders:[]}}}
 function demoCommunityRecipes(){return [
  {id:'demo-luna-espresso',ownerId:'demo-ana',ownerName:'Ana Park',ownerHandle:'ana-brews',method:'Espresso',title:'Sweet washed Ethiopia flat 9 bar',visibility:'public',beanName:'Ethiopia Chelbesa',roaster:'Konga',origin:'Ethiopia',process:'Washed',roastLevel:'Light',params:{grind:17.4,dose:18,yieldOut:40,time:31,temp:93,ratio:'1:2.2'},tags:['Fruity','Floral','Sweet','Light'],score:8.9,notes:'Longer ratio keeps the florals open without turning thin.',saves:18,createdAt:'2026-05-20T12:00:00.000Z',updatedAt:'2026-05-20T12:00:00.000Z'},
  {id:'demo-matteo-pourover',ownerId:'demo-matteo',ownerName:'Matteo Silva',ownerHandle:'matteo-cups',method:'Pour Over',title:'Chocolate-forward Brazil V60',visibility:'public',beanName:'Brazil Sitio Bonilha',roaster:'Archive Coffee',origin:'Brazil',process:'Natural',roastLevel:'Medium',params:{grind:43,dose:20,water:320,totalTime:205,bloom:45,temp:96,stages:[{name:'Bloom',time:45,weight:60},{name:'Pour 1',time:85,weight:160},{name:'Pour 2',time:135,weight:240},{name:'Final',time:175,weight:320}]},tags:['Chocolate','Sweet','Medium'],score:8.6,notes:'Slow final drawdown brings out body and sweetness.',saves:11,createdAt:'2026-05-22T12:00:00.000Z',updatedAt:'2026-05-22T12:00:00.000Z'},
@@ -221,8 +221,12 @@ function ensureCommunity(o){
  if(!Array.isArray(c.recipes))c.recipes=[];
  if(!Array.isArray(c.savedRecipeIds))c.savedRecipeIds=['demo-luna-espresso'];
  if(!Array.isArray(c.follows))c.follows=['demo-ana'];
+ if(!Array.isArray(c.ratings))c.ratings=[];
  if(!Array.isArray(c.events))c.events=[];
+ c.session={signedIn:false,provider:'local',providerUserId:'',sessionId:'',email:'',...(c.session||{})};
  c.sync={apiBase:'',enabled:false,lastSyncAt:'',lastError:'',...(c.sync||{})};
+ c.user.location={city:'',region:'',country:'',...(c.user.location||{})};
+ c.user.equipment=profileEquipment(o);
  o.community=c;
  const existing=new Map(c.recipes.map(r=>[r.id,r]));
  const profileRecipes=recipesFromProfiles(o,c).map(r=>{
@@ -247,6 +251,27 @@ function profileToRecipe(b,m,p,c){
 function recipeTags(b,p,m){let text=[b.name,b.roaster,b.origin,b.process,b.roastLevel,p.notes,m].join(' ').toLowerCase(); let tags=[m,b.roastLevel].filter(Boolean); flavourTags.forEach(t=>{if(text.includes(t.toLowerCase()))tags.push(t)}); return [...new Set(tags)]}
 function recipeById(id){ensureCommunity(state); return state.community.recipes.find(r=>r.id===id)}
 function apiBase(){return (state.community?.sync?.apiBase||'').trim().replace(/\/+$/,'')}
+function profileEquipment(sourceState=state){
+ const p=sourceState?.userProfile||{}, machine=p.machine||{}, grinders=p.grinders||[];
+ return {
+  machine:[machine.manufacturer,machine.model].filter(Boolean).join(' '),
+  grinders:grinders.map(g=>({id:g.id,model:g.model,name:g.name,burrType:g.burrType,burrOther:g.burrOther,profile:g.profile}))
+ };
+}
+function publicUser(){
+ ensureCommunity(state);
+ const c=state.community;
+ return {...c.user,equipment:profileEquipment(), signedIn:c.session.signedIn, authProvider:c.session.provider};
+}
+function userFollowObjects(){ensureCommunity(state); return state.community.follows.map(followeeId=>({followerId:state.community.user.id,followeeId}))}
+function communityRating(recipeId){ensureCommunity(state); let arr=state.community.ratings.filter(r=>r.recipeId===recipeId); if(!arr.length)return {avg:0,count:0,mine:null}; let mine=arr.find(r=>r.userId===state.community.user.id); return {avg:Math.round((arr.reduce((s,r)=>s+(+r.rating||0),0)/arr.length)*10)/10,count:arr.length,mine}}
+function recipeDisplayRating(r){let local=communityRating(r.id); return {avg:local.count?local.avg:(r.communityRating||0),count:local.count||r.ratingCount||0,mine:local.mine}}
+async function postJson(path,body){
+ const base=apiBase(); if(!base||!state.community.sync.enabled)return null;
+ const res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!res.ok)throw new Error('Backend request failed');
+ return res.json();
+}
 function trackEvent(type,payload={}){
  ensureCommunity(state);
  const event={id:uid(),type,payload,userId:state.community.user.id,createdAt:iso()};
@@ -265,13 +290,20 @@ async function syncCommunity(silent=false){
  if(!base){toast('Add a backend URL in More');return}
  const mine=state.community.recipes.filter(r=>r.ownerId===state.community.user.id&&r.visibility==='public');
  try{
-  await fetch(base+'/api/recipes/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipes:mine})});
+  await fetch(base+'/api/recipes/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:publicUser(),recipes:mine,follows:userFollowObjects(),ratings:state.community.ratings})});
   const res=await fetch(base+'/api/recipes');
   if(!res.ok)throw new Error('Recipe sync failed');
   const remote=await res.json();
   const merged=new Map(state.community.recipes.map(r=>[r.id,r]));
   (remote.recipes||[]).forEach(r=>{if(r.ownerId!==state.community.user.id)merged.set(r.id,r)});
   state.community.recipes=[...merged.values()];
+  const ratingsRes=await fetch(base+'/api/ratings').catch(()=>null);
+  if(ratingsRes?.ok){
+   const data=await ratingsRes.json();
+   const ratings=new Map(state.community.ratings.map(r=>[r.id||`${r.recipeId}:${r.userId}`,r]));
+   (data.ratings||[]).forEach(r=>ratings.set(r.id||`${r.recipeId}:${r.userId}`,r));
+   state.community.ratings=[...ratings.values()];
+  }
   state.community.sync.lastSyncAt=iso();
   state.community.sync.lastError='';
   save();
@@ -319,22 +351,43 @@ function drawRecipeList(){let el=$('#recipeList'); if(!el)return; let list=recip
 function recipeParamLine(r){let p=r.params||{}; if(r.method==='Espresso')return `${p.dose||'—'}g in · ${p.yieldOut||'—'}g out · ${fmt(p.time||0)}s · ${p.temp||'—'}°`; return `${p.dose||'—'}g coffee · ${p.water||'—'}g water · ${fmt(p.totalTime||0)} · ${p.temp||'—'}°`}
 function recipeCard(r){
  const c=state.community, mine=r.ownerId===c.user.id, saved=c.savedRecipeIds.includes(r.id), following=c.follows.includes(r.ownerId);
- return `<article class="recipe-card click" onclick="recipeDetail('${r.id}')"><div class="recipe-top"><span class="pill">${esc(r.method)}</span><span class="match">${Math.round(recipeMatchScore(r)*10)/10} match</span></div><h3>${esc(r.title)}</h3><p>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · '))}</p><div class="recipe-meta"><b>${r.score||'—'}</b><span>${esc(recipeParamLine(r))}</span></div><div class="tag-row">${(r.tags||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div><div class="recipe-owner"><span>@${esc(r.ownerHandle||'user')}</span><div>${mine?`<button onclick="event.stopPropagation();publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public':'Publish'}</button>`:`<button onclick="event.stopPropagation();saveCommunityRecipe('${r.id}')">${saved?'Saved':'Save'}</button><button onclick="event.stopPropagation();toggleFollow('${r.ownerId}')">${following?'Following':'Follow'}</button>`}</div></div></article>`
+ const community=recipeDisplayRating(r);
+ return `<article class="recipe-card click" onclick="recipeDetail('${r.id}')"><div class="recipe-top"><span class="pill">${esc(r.method)}</span><span class="match">${Math.round(recipeMatchScore(r)*10)/10} match</span></div><h3>${esc(r.title)}</h3><p>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · '))}</p><div class="recipe-meta"><b>${r.score||'—'}</b><span>${esc(recipeParamLine(r))}</span></div><div class="recipe-rating-row"><span>Community ${community.count?community.avg:'—'} (${community.count})</span>${community.mine?`<span>Your rating ${community.mine.rating}</span>`:''}</div><div class="tag-row">${(r.tags||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div><div class="recipe-owner"><span>@${esc(r.ownerHandle||'user')}</span><div>${mine?`<button onclick="event.stopPropagation();publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public':'Publish'}</button>`:`<button onclick="event.stopPropagation();saveCommunityRecipe('${r.id}')">${saved?'Saved':'Save'}</button><button onclick="event.stopPropagation();toggleFollow('${r.ownerId}')">${following?'Following':'Follow'}</button><button onclick="event.stopPropagation();openRatingForm('${r.id}')">Rate</button>`}</div></div></article>`
 }
 function saveCommunityRecipe(id){ensureCommunity(state); if(!state.community.savedRecipeIds.includes(id))state.community.savedRecipeIds.push(id); trackEvent('recipe.saved',{recipeId:id}); save(); render(); toast('Recipe saved to library')}
 function publishRecipe(id){let r=recipeById(id); if(!r)return; r.visibility='public'; r.ownerName=state.community.user.displayName; r.ownerHandle=state.community.user.handle; r.updatedAt=iso(); trackEvent('recipe.published',{recipeId:id}); save(); syncCommunity(true); render(); toast('Recipe published')}
-function toggleFollow(userId){ensureCommunity(state); if(userId===state.community.user.id){toast('This is your profile');return} let f=state.community.follows, i=f.indexOf(userId); if(i>=0)f.splice(i,1); else f.push(userId); trackEvent(i>=0?'user.unfollowed':'user.followed',{userId}); save(); render()}
+async function toggleFollow(userId){ensureCommunity(state); if(userId===state.community.user.id){toast('This is your profile');return} let f=state.community.follows, i=f.indexOf(userId), following=i<0; if(i>=0)f.splice(i,1); else f.push(userId); trackEvent(following?'user.followed':'user.unfollowed',{userId}); save(); render(); try{await postJson(following?'/api/follows':'/api/unfollow',{followerId:state.community.user.id,followeeId:userId})}catch(e){state.community.sync.lastError='Follow sync failed';save()}}
 function recipeDetail(id){
  const r=recipeById(id); if(!r)return;
  const mine=r.ownerId===state.community.user.id, saved=state.community.savedRecipeIds.includes(r.id), following=state.community.follows.includes(r.ownerId);
+ const community=recipeDisplayRating(r);
  const stages=(r.params?.stages||[]).map(s=>`<div><span>${esc(s.name)}</span>${s.time}s · ${s.weight}g</div>`).join('');
  const editButton=mine?`<button class="edit-icon modal-edit" onclick="openRecipeForm('${r.id}')">${icon('pencil')}</button>`:'';
- modal(`${editButton}<h2>${esc(r.title)}</h2><div class="hero-detail"><b>${r.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Creator</span>@${esc(r.ownerHandle||'user')}</div><div><span>Method</span>${esc(r.method)}</div><div><span>Bean</span>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · ')||'Standalone')}</div><div><span>Roast</span>${esc(r.roastLevel||'—')}</div><div><span>Recipe</span>${esc(recipeParamLine(r))}</div><div><span>Tags</span>${esc((r.tags||[]).join(', ')||'—')}</div><div><span>Notes</span>${esc(r.notes||'—')}</div>${stages?`<div><span>Stages</span><section class="stage-detail">${stages}</section></div>`:''}</div>${mine?`<button class="btn full" onclick="publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public Recipe':'Publish Recipe'}</button>`:`<button class="btn full" onclick="saveCommunityRecipe('${r.id}')">${saved?'Saved to Library':'Save to My Library'}</button><button class="btn secondary full" onclick="toggleFollow('${r.ownerId}')">${following?'Unfollow':'Follow'} @${esc(r.ownerHandle||'user')}</button>`}<button class="btn secondary full" onclick="useCommunityRecipe('${r.id}')">${mine&&r.sourceBeanId?'Brew Using This Profile':'Copy to Current Bean'}</button>`)
+ modal(`${editButton}<h2>${esc(r.title)}</h2><div class="hero-detail"><b>${r.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Creator</span>@${esc(r.ownerHandle||'user')}</div><div><span>Method</span>${esc(r.method)}</div><div><span>Bean</span>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · ')||'Standalone')}</div><div><span>Roast</span>${esc(r.roastLevel||'—')}</div><div><span>Recipe</span>${esc(recipeParamLine(r))}</div><div><span>Community</span>${community.count?`${community.avg}/10 from ${community.count} rating${community.count===1?'':'s'}`:'No ratings yet'}</div><div><span>Your Rating</span>${community.mine?`${community.mine.rating}/10${community.mine.review?' · '+esc(community.mine.review):''}`:'Not rated yet'}</div><div><span>Tags</span>${esc((r.tags||[]).join(', ')||'—')}</div><div><span>Notes</span>${esc(r.notes||'—')}</div>${stages?`<div><span>Stages</span><section class="stage-detail">${stages}</section></div>`:''}</div>${mine?`<button class="btn full" onclick="publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public Recipe':'Publish Recipe'}</button>`:`<button class="btn full" onclick="saveCommunityRecipe('${r.id}')">${saved?'Saved to Library':'Save to My Library'}</button><button class="btn secondary full" onclick="toggleFollow('${r.ownerId}')">${following?'Unfollow':'Follow'} @${esc(r.ownerHandle||'user')}</button><button class="btn secondary full" onclick="openRatingForm('${r.id}')">${community.mine?'Update Rating':'Rate Recipe'}</button>`}<button class="btn secondary full" onclick="useCommunityRecipe('${r.id}')">${mine&&r.sourceBeanId?'Brew Using This Profile':'Copy to Current Bean'}</button>`)
 }
 function useCommunityRecipe(id){
  const r=recipeById(id); if(!r)return;
  if(r.ownerId===state.community.user.id&&r.sourceBeanId&&r.sourceProfileId){closeModal(); brewUsingProfile(r.sourceBeanId,r.method,r.sourceProfileId); return}
  copyRecipeToCurrentBean(id);
+}
+function openRatingForm(recipeId){
+ ensureCommunity(state);
+ const r=recipeById(recipeId), existing=communityRating(recipeId).mine;
+ if(!r)return;
+ modal(`<h2>Rate Recipe</h2><p>${esc(r.title)} by @${esc(r.ownerHandle||'user')}</p>${ratingBlock(existing?.rating||8)}<label>Review Notes</label><textarea id="ratingReview" placeholder="What worked, what would you change?">${esc(existing?.review||'')}</textarea><button class="btn full" onclick="saveCommunityRating('${recipeId}')">Save Rating</button>`);
+ updateRating(existing?.rating||8);
+}
+async function saveCommunityRating(recipeId){
+ ensureCommunity(state);
+ const rating={id:`${recipeId}:${state.community.user.id}`,recipeId,userId:state.community.user.id,userHandle:state.community.user.handle,rating:+$('#rating').value,review:$('#ratingReview').value,createdAt:communityRating(recipeId).mine?.createdAt||iso(),updatedAt:iso()};
+ const i=state.community.ratings.findIndex(r=>r.recipeId===recipeId&&r.userId===state.community.user.id);
+ if(i>=0)state.community.ratings[i]=rating; else state.community.ratings.unshift(rating);
+ trackEvent('recipe.rated',{recipeId,rating:rating.rating});
+ save();
+ try{await postJson('/api/ratings',rating)}catch(e){state.community.sync.lastError='Rating sync failed';save()}
+ closeModal();
+ render();
+ toast('Recipe rated');
 }
 function copyRecipeToCurrentBean(id){
  const r=recipeById(id), b=currentBean(); if(!r||!b)return;
@@ -375,21 +428,43 @@ function deleteCommunityRecipe(id){let r=recipeById(id); if(!r||r.ownerId!==stat
 function moreView(){
  ensureCommunity(state);
  const c=state.community, last=c.sync.lastSyncAt?dateShort(c.sync.lastSyncAt):'Never';
- return `<section class="card"><h2>Settings</h2><button class="btn full secondary" onclick="go('maintenance')">Maintenance Tracker</button><div class="tile ${state.settings.rateReminder?'selected':''}" onclick="state.settings.rateReminder=!state.settings.rateReminder;render()"><b>Ask me to rate my brew later</b><p>${state.settings.rateReminder?'Enabled':'Disabled'}</p></div><label>Rating reminder delay</label><select onchange="state.settings.rateDelay=this.value;save()"><option value="5" ${state.settings.rateDelay==5?'selected':''}>5 minutes</option><option value="10" ${state.settings.rateDelay==10?'selected':''}>10 minutes</option></select></section><section class="card"><h2>Community Profile</h2><label>Display Name</label><input id="communityName" value="${esc(c.user.displayName)}"><label>Handle</label><input id="communityHandle" value="${esc(c.user.handle)}"><label>Bio</label><textarea id="communityBio">${esc(c.user.bio||'')}</textarea><label>Backend API URL</label><input id="apiBase" placeholder="http://localhost:8787" value="${esc(c.sync.apiBase||'')}"><div class="tile ${c.sync.enabled?'selected':''}" onclick="toggleBackendSync()"><b>Backend sync</b><p>${c.sync.enabled?'Enabled':'Disabled'} · Last sync: ${last}</p></div>${c.sync.lastError?`<p class="error">${esc(c.sync.lastError)}</p>`:''}<button class="btn full" onclick="saveCommunitySettings()">Save Community Settings</button><button class="btn secondary full" onclick="syncCommunity()">Sync Recipes Now</button></section><section class="card"><h2>Data</h2><button class="btn full secondary" onclick="exportData()">Export Backup</button><button class="btn full secondary" onclick="document.getElementById('importBackup').click()">Import Backup</button><input type="file" id="importBackup" accept="application/json" hidden onchange="importData(event)"><button class="btn full secondary" onclick="localStorage.removeItem(KEY);location.reload()">Reset Demo Data</button></section>`
+ const loc=c.user.location||{}, equipment=profileEquipment();
+ return `<section class="card"><h2>Account</h2><div class="account-state"><b>${c.session.signedIn?'Signed in':'Local profile'}</b><span>${esc(c.session.provider||'local')}</span></div><div class="auth-grid"><button onclick="socialSignIn('apple')">Continue with Apple</button><button onclick="socialSignIn('google')">Continue with Google</button><button onclick="socialSignIn('facebook')">Continue with Facebook</button></div><p>These buttons create provider-aware sessions in this prototype. Production mobile builds should exchange native Apple/Google/Facebook tokens with the same backend endpoint.</p>${c.session.signedIn?`<button class="btn secondary full" onclick="signOut()">Sign Out</button>`:''}</section><section class="card"><h2>Community Profile</h2><label>Display Name</label><input id="communityName" value="${esc(c.user.displayName)}"><label>Email</label><input id="communityEmail" type="email" value="${esc(c.user.email||c.session.email||'')}"><label>Handle</label><input id="communityHandle" value="${esc(c.user.handle)}"><label>City</label><input id="communityCity" value="${esc(loc.city||'')}" placeholder="Toronto"><div class="metric-grid"><label>Region<input id="communityRegion" value="${esc(loc.region||'')}" placeholder="ON"></label><label>Country<input id="communityCountry" value="${esc(loc.country||'')}" placeholder="Canada"></label></div><label>Bio</label><textarea id="communityBio">${esc(c.user.bio||'')}</textarea><section class="inner-card"><h3>Equipment Shared on Profile</h3><p>${esc(equipment.machine||'Machine not set')}</p><p>${esc((equipment.grinders||[]).map(g=>[g.name||g.model,g.burrType==='Other'?g.burrOther:g.burrType,g.profile].filter(Boolean).join(' / ')).join(', ')||'Grinder not set')}</p><button class="btn secondary full" onclick="editProfile()">Edit Equipment</button></section><button class="btn full" onclick="saveCommunitySettings()">Save Profile</button></section><section class="card"><h2>Backend Tracking</h2><label>Backend API URL</label><input id="apiBase" placeholder="http://localhost:8787" value="${esc(c.sync.apiBase||'')}"><div class="tile ${c.sync.enabled?'selected':''}" onclick="toggleBackendSync()"><b>User data, follow, rating, and recipe sync</b><p>${c.sync.enabled?'Enabled':'Disabled'} · Last sync: ${last}</p></div>${c.sync.lastError?`<p class="error">${esc(c.sync.lastError)}</p>`:''}<button class="btn full" onclick="syncCommunity()">Sync Now</button></section><section class="card"><h2>Settings</h2><button class="btn full secondary" onclick="go('maintenance')">Maintenance Tracker</button><div class="tile ${state.settings.rateReminder?'selected':''}" onclick="state.settings.rateReminder=!state.settings.rateReminder;render()"><b>Ask me to rate my brew later</b><p>${state.settings.rateReminder?'Enabled':'Disabled'}</p></div><label>Rating reminder delay</label><select onchange="state.settings.rateDelay=this.value;save()"><option value="5" ${state.settings.rateDelay==5?'selected':''}>5 minutes</option><option value="10" ${state.settings.rateDelay==10?'selected':''}>10 minutes</option></select></section><section class="card"><h2>Data</h2><button class="btn full secondary" onclick="exportData()">Export Backup</button><button class="btn full secondary" onclick="document.getElementById('importBackup').click()">Import Backup</button><input type="file" id="importBackup" accept="application/json" hidden onchange="importData(event)"><button class="btn full secondary" onclick="localStorage.removeItem(KEY);location.reload()">Reset Demo Data</button></section>`
 }
-function toggleBackendSync(){ensureCommunity(state); state.community.sync.enabled=!state.community.sync.enabled; save(); render()}
-function saveCommunitySettings(){
+function toggleBackendSync(){ensureCommunity(state); if($('#apiBase'))state.community.sync.apiBase=$('#apiBase').value.trim(); state.community.sync.enabled=!state.community.sync.enabled; save(); render()}
+async function socialSignIn(provider){
+ ensureCommunity(state);
+ saveCommunitySettings(false);
+ const c=state.community, providerName=provider.charAt(0).toUpperCase()+provider.slice(1);
+ c.session={signedIn:true,provider,providerUserId:`${provider}:${c.user.handle}`,sessionId:'local-'+uid(),email:c.user.email||'',signedInAt:iso()};
+ c.user.authProvider=provider;
+ trackEvent('auth.sign_in',{provider});
+ try{
+  const data=await postJson('/api/auth/social',{provider,providerUserId:c.session.providerUserId,user:publicUser()});
+  if(data?.user)Object.assign(c.user,data.user);
+  if(data?.session)c.session.sessionId=data.session.id;
+ }catch(e){c.sync.lastError='Auth sync pending until backend is reachable'}
+ save();
+ render();
+ toast(`Signed in with ${providerName}`);
+}
+function signOut(){ensureCommunity(state); trackEvent('auth.sign_out',{provider:state.community.session.provider}); state.community.session={signedIn:false,provider:'local',providerUserId:'',sessionId:'',email:''}; save(); render()}
+function saveCommunitySettings(renderNow=true){
  ensureCommunity(state);
  const c=state.community;
  c.user.displayName=$('#communityName').value||'Home Barista';
+ c.user.email=$('#communityEmail')?.value||c.user.email||'';
  c.user.handle=($('#communityHandle').value||c.user.displayName).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'home-barista';
  c.user.bio=$('#communityBio').value;
- c.sync.apiBase=$('#apiBase').value.trim();
+ c.user.location={city:$('#communityCity')?.value||'',region:$('#communityRegion')?.value||'',country:$('#communityCountry')?.value||''};
+ c.user.equipment=profileEquipment();
+ c.session.email=c.user.email;
+ c.sync.apiBase=$('#apiBase')?.value.trim()||c.sync.apiBase||'';
  c.recipes.forEach(r=>{if(r.ownerId===c.user.id){r.ownerName=c.user.displayName;r.ownerHandle=c.user.handle}});
  trackEvent('community.settings.updated',{syncEnabled:c.sync.enabled});
  save();
- render();
- toast('Community settings saved');
+ postJson('/api/users',publicUser()).catch(()=>{c.sync.lastError='Profile sync failed';save()});
+ if(renderNow){render();toast('Community settings saved')}
 }
 function importData(e){let f=e.target.files[0]; if(!f)return; let r=new FileReader(); r.onload=()=>{try{state=migrate(JSON.parse(r.result)); save(); render(); toast('Backup imported')}catch(err){toast('Import failed')}}; r.readAsText(f)}
 const originalSaveBrew=saveBrew;

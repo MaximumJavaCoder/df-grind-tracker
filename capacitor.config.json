@@ -1,0 +1,17 @@
+{
+  "appId": "ca.dfdial.app",
+  "appName": "DF Dial",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "backgroundColor": "#050505"
+    }
+  }
+}
