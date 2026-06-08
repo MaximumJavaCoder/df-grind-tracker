@@ -1,6 +1,6 @@
 {
-  "appId": "ca.dfdial.app",
-  "appName": "DF Dial",
+  "appId": "ca.brewlibrary.app",
+  "appName": "Brew Library",
   "webDir": "www",
   "server": {
     "androidScheme": "https"

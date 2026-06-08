@@ -8,7 +8,7 @@ const files = [
   'manifest.json',
   'sw.js',
   'icon.svg',
-  'dfgrinderslogo.svg',
+  'brew-library-logo.svg',
 ];
 
 const outDir = path.join(__dirname, 'www');

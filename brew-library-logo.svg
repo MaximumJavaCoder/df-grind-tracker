@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 90" role="img" aria-label="Brew Library">
+  <rect width="430" height="90" fill="#050505"/>
+  <g fill="#f3efe4">
+    <text x="6" y="58" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="900" letter-spacing="2">BREW LIBRARY</text>
+  </g>
+  <path d="M360 20h34c10 0 18 8 18 18v34h-52a18 18 0 0 1-18-18V38c0-10 8-18 18-18z" fill="none" stroke="#c49a60" stroke-width="5"/>
+  <path d="M356 37h44M356 52h32" stroke="#f3efe4" stroke-width="5" stroke-linecap="round"/>
+</svg>

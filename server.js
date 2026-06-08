@@ -5,7 +5,7 @@ const { randomUUID } = require('crypto');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8787);
-const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, 'df-dial-data.json');
+const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, 'brew-library-data.json');
 const JSON_LIMIT = 1024 * 1024;
 
 const TYPES = {
@@ -283,5 +283,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`DF Dial app and API listening on http://localhost:${PORT}`);
+  console.log(`Brew Library app and API listening on http://localhost:${PORT}`);
 });

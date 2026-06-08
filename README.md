@@ -1,6 +1,6 @@
-# DF Dial
+# Brew Library
 
-DF Dial is a local-first coffee dial-in PWA for beans, brews, maintenance, reusable recipes, and community discovery.
+Brew Library is a local-first coffee dial-in PWA for beans, brews, maintenance, reusable recipes, and community discovery.
 
 ## Run locally
 
@@ -49,4 +49,4 @@ The `mobile:prepare` script generates a static `www/` bundle for Capacitor. Nati
 - `POST /api/events`
 - `GET /api/events`
 
-The prototype backend stores data in `df-dial-data.json` by default. This file is ignored by git.
+The prototype backend stores data in `brew-library-data.json` by default. This file is ignored by git.

@@ -1,5 +1,5 @@
 {
-  "name": "df-dial",
+  "name": "brew-library",
   "version": "0.1.0",
   "private": true,
   "description": "Local-first coffee recipe and dial-in PWA with mobile packaging and a lightweight recipe sync API.",
