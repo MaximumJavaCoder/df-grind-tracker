@@ -1,0 +1,11 @@
+{
+  "name": "df-dial",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first coffee recipe and dial-in PWA with a lightweight recipe sync API.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check app.js && node --check server.js"
+  }
+}

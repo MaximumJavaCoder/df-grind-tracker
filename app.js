@@ -1,8 +1,9 @@
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random());
-const KEY='dfDialV13'; let view='home', beanTab='current', maintTab='grinder', selectedMethod='Espresso'; let pourStage='idle', pourBloom=0;
+const KEY='dfDialV13'; let view='home', beanTab='current', maintTab='grinder', selectedMethod='Espresso', recipeTab='library', recipeQuery='', recipeMethod='All', recipeRoast='All', recipeMatchPrefs=true; let pourStage='idle', pourBloom=0;
 const iso=()=>new Date().toISOString(), today=()=>new Date().toISOString().slice(0,10);
 const brewMethods=['Espresso','Pour Over','AeroPress','French Press','Moka Pot','Other'];
+const flavourTags=['Chocolate','Fruity','Floral','Sweet','Funky'];
 const models=['DF54','DF64','DF64V','DF83','DF83V'];
 let timer={running:false,start:0,elapsed:0,int:null};
 const h=(ms=12)=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
@@ -18,8 +19,8 @@ function seed(){let g=uid(), b1=uid(), b2=uid(), p1=uid(), p2=uid(), p3=uid(), n
  maintenance:[{id:uid(),group:'grinder',name:'Grinder deep clean',item:'DF grinder',intervalDays:45,lastDone:today()},{id:uid(),group:'grinder',name:'Chute cleaning',item:'DF grinder',intervalDays:7,lastDone:today()},{id:uid(),group:'espresso',name:'Backflushing',item:'Espresso machine',intervalDays:7,lastDone:today()}],
  settings:{rateReminder:true,rateDelay:7}
 }}
-function migrate(o){let f=seed(); if(!o)return f; o.userProfile=o.userProfile||o.profile||f.userProfile; o.settings=o.settings||f.settings; o.maintenance=o.maintenance||f.maintenance; o.beans=(o.beans||f.beans).map(b=>({...b,status:b.status==='archived'?'archived':'current',photo:b.photo||'',brewProfiles:b.brewProfiles||{Espresso:[]}})); o.brews=o.brews||o.shots||f.brews; o.currentBeanId=o.currentBeanId||o.beans[0]?.id; ['Grinder deep clean','Chute cleaning','Backflushing'].forEach((n,i)=>{if(!o.maintenance.some(m=>m.name===n))o.maintenance.push(f.maintenance[i])}); return o}
-function load(){try{let s=localStorage.getItem(KEY)||localStorage.getItem('dfDialV9')||localStorage.getItem('dfDialV8'); if(s)return migrate(JSON.parse(s))}catch(e){} return seed()} let state=load();
+function migrate(o){let f=seed(); if(!o)return ensureCommunity(f); o.userProfile=o.userProfile||o.profile||f.userProfile; o.settings=o.settings||f.settings; o.maintenance=o.maintenance||f.maintenance; o.beans=(o.beans||f.beans).map(b=>({...b,status:b.status==='archived'?'archived':'current',photo:b.photo||'',brewProfiles:b.brewProfiles||{Espresso:[]}})); o.brews=o.brews||o.shots||f.brews; o.currentBeanId=o.currentBeanId||o.beans[0]?.id; ['Grinder deep clean','Chute cleaning','Backflushing'].forEach((n,i)=>{if(!o.maintenance.some(m=>m.name===n))o.maintenance.push(f.maintenance[i])}); return ensureCommunity(o)}
+function load(){try{let s=localStorage.getItem(KEY)||localStorage.getItem('dfDialV9')||localStorage.getItem('dfDialV8'); if(s)return migrate(JSON.parse(s))}catch(e){} return ensureCommunity(seed())} let state=ensureCommunity(load());
 function save(){localStorage.setItem(KEY,JSON.stringify(state))}
 const bean=id=>state.beans.find(b=>b.id===id), currentBean=()=>bean(state.currentBeanId)||state.beans.find(b=>b.status==='current')||state.beans[0];
 const grinder=id=>(state.userProfile.grinders||[]).find(g=>g.id===id)||state.userProfile.grinders?.[0]||{};
@@ -30,7 +31,7 @@ function fmt(sec){sec=+(sec||0); if(sec<60)return sec.toFixed(1).padStart(4,'0')
 function dateShort(s){return new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric'})}
 function toast(m){let t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',1800)}
 function dueInfo(){let x=null; state.maintenance.forEach(m=>{let d=new Date(m.lastDone); d.setDate(d.getDate()+Number(m.intervalDays)); if(!x||d<x.date)x={m,date:d}}); return {x,days:x?Math.ceil((x.date-new Date())/86400000):0}}
-function logo(){return `<div class="hero"><img src="dfgrinderslogo.png" class="wordmark"></div>`}
+function logo(){return `<div class="hero"><img src="dfgrinderslogo.svg" class="wordmark" alt="DF Dial"></div>`}
 function icon(name){const path={home:'M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3z',beans:'M15.6 3.2c3.2 1.2 4.7 5.8 3.3 10.2s-5.1 7-8.3 5.8S5.9 13.4 7.3 9 12.4 2 15.6 3.2Z M8.2 18.5c2.4-2.5 4.1-5.3 5.2-8.5.7-2.1 1.1-4.1 1.2-6',shot:'M6 8h12v5.5a6 6 0 0 1-12 0z M18 10h2.2a2.3 2.3 0 0 1 0 4.6H18 M8 20h8 M10 4h4',maint:'M14.8 6.1a4.5 4.5 0 0 0-5.4 5.4l-5.9 5.9 3.1 3.1 5.9-5.9a4.5 4.5 0 0 0 5.4-5.4l-3 3-2.1-2.1z',more:'M4 7h16 M4 12h16 M4 17h16',pencil:'M4 20h4l11-11-4-4L4 16z M13 6l4 4',back:'M15 18l-6-6 6-6',camera:'M4 8h3l1.5-2h7L17 8h3v11H4z M12 11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'}[name]; return `<svg viewBox="0 0 24 24"><path d="${path}"/></svg>`}
 function brewSvg(m){
  const paths={
@@ -186,7 +187,7 @@ function saveRecipeProfile(beanId,m,pid){let b=bean(beanId), arr=b.brewProfiles[
 function profileDetail(beanId,m,pid){let b=bean(beanId), p=(b.brewProfiles[m]||[]).find(x=>x.id===pid); modal(`<button class="edit-icon modal-edit" onclick="profileForm('${beanId}','${m}','${pid}')">${icon('pencil')}</button><h2>${esc(p.name)}</h2><div class="hero-detail"><b>${p.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Method</span>${m}</div><div><span>Grind</span>${p.grind}</div><div><span>Dose</span>${p.dose}g</div><div><span>Output</span>${p.yieldOut||p.water||'—'}g</div><div><span>Temperature</span>${tempVal(p,m)}°</div><div><span>Time</span>${fmt(p.time||p.totalTime)}s</div><div><span>Notes</span>${esc(p.notes||'—')}</div></div><button class="btn full" onclick="brewUsingProfile('${beanId}','${m}','${pid}')">Brew Using This Profile</button>`)}
 function brewUsingProfile(beanId,method,pid){closeModal(); selectedMethod=method; view='log'; setTimeout(()=>{render(); let p=(bean(beanId).brewProfiles[method]||[]).find(x=>x.id===pid); if(p){$('#logBean').value=beanId; $('#grind').value=(+p.grind).toFixed(1); syncRuler(+p.grind); $('#dose').value=p.dose||''; if(method==='Espresso')$('#yieldOut').value=p.yieldOut||''; else $('#water').value=p.water||''; if($('#temp'))$('#temp').value=tempVal(p,method);}},0)}
 function togglePourTimer(){h(18); if(pourStage==='idle'){pourStage='bloom'; timer.running=true; timer.start=Date.now(); timer.elapsed=0; $('#timerCircle')?.classList.add('running'); $('#timeLabel').textContent='TAP WHEN BLOOM ENDS'; timer.int=setInterval(()=>{timer.elapsed=Date.now()-timer.start; $('#timeText').textContent=fmt(timer.elapsed/1000)},80); return} if(pourStage==='bloom'){pourBloom=timer.elapsed/1000; let b=$('#bloom'); if(b)b.value=Math.round(pourBloom); pourStage='pour1'; $('#timeLabel').textContent='TAP FOR NEXT POUR'; return} if(pourStage.startsWith('pour')){let n=+(pourStage.replace('pour','')||1); pourStage='pour'+(n+1); $('#timeLabel').textContent='DOUBLE TAP TO STOP'; return}}
-if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js'); render();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 
 /* v14 safety overrides */
 function closeModal(){document.querySelectorAll('#modal,.modal-bg').forEach(m=>m.remove())}
@@ -203,3 +204,201 @@ function timerBlock(m='Espresso'){
  let label=m==='Pour Over'?'TAP TO START BLOOM':'TAP TO START';
  return `<div class="timer" id="timerCircle" onclick="toggleTimer('${m}')" ondblclick="stopTimer(true);pourStage='done';let mt=document.getElementById('manualTime');if(mt)mt.value=(timer.elapsed/1000).toFixed(1);let tl=document.getElementById('timeLabel');if(tl)tl.textContent='BREW COMPLETE'"><div class="timer-inner"><div><div class="timer-time" id="timeText">00.0</div><div class="timer-label" id="timeLabel">${label}</div></div></div></div><button class="reset-timer" onclick="event.stopPropagation();resetTimer()">↺ Reset</button>`
 }
+
+/* v15 community recipe library and backend sync foundation */
+function navRecipeIcon(){return `<svg viewBox="0 0 24 24"><path d="M5 5.5h10.5a2.5 2.5 0 0 1 2.5 2.5v11H7.5A2.5 2.5 0 0 1 5 16.5v-11z M8 8.5h7 M8 12h7 M8 15.5h4 M18 8h1.5a1.5 1.5 0 0 1 1.5 1.5V19"/></svg>`}
+function nav(){return `<nav class="nav"><button class="${view==='home'?'active':''}" onclick="go('home')">${icon('home')}</button><button class="${view==='beans'?'active':''}" onclick="go('beans')">${icon('beans')}</button><button class="plus" onclick="go('log')">+</button><button class="${view==='recipes'?'active':''}" onclick="go('recipes')">${navRecipeIcon()}</button><button class="${view==='more'||view==='maintenance'?'active':''}" onclick="go('more')">${icon('more')}</button></nav>`}
+function defaultCommunityUser(){return {id:'local-'+uid(),displayName:'Home Barista',handle:'home-barista',bio:'Dialing in recipes with DF Dial'}}
+function demoCommunityRecipes(){return [
+ {id:'demo-luna-espresso',ownerId:'demo-ana',ownerName:'Ana Park',ownerHandle:'ana-brews',method:'Espresso',title:'Sweet washed Ethiopia flat 9 bar',visibility:'public',beanName:'Ethiopia Chelbesa',roaster:'Konga',origin:'Ethiopia',process:'Washed',roastLevel:'Light',params:{grind:17.4,dose:18,yieldOut:40,time:31,temp:93,ratio:'1:2.2'},tags:['Fruity','Floral','Sweet','Light'],score:8.9,notes:'Longer ratio keeps the florals open without turning thin.',saves:18,createdAt:'2026-05-20T12:00:00.000Z',updatedAt:'2026-05-20T12:00:00.000Z'},
+ {id:'demo-matteo-pourover',ownerId:'demo-matteo',ownerName:'Matteo Silva',ownerHandle:'matteo-cups',method:'Pour Over',title:'Chocolate-forward Brazil V60',visibility:'public',beanName:'Brazil Sitio Bonilha',roaster:'Archive Coffee',origin:'Brazil',process:'Natural',roastLevel:'Medium',params:{grind:43,dose:20,water:320,totalTime:205,bloom:45,temp:96,stages:[{name:'Bloom',time:45,weight:60},{name:'Pour 1',time:85,weight:160},{name:'Pour 2',time:135,weight:240},{name:'Final',time:175,weight:320}]},tags:['Chocolate','Sweet','Medium'],score:8.6,notes:'Slow final drawdown brings out body and sweetness.',saves:11,createdAt:'2026-05-22T12:00:00.000Z',updatedAt:'2026-05-22T12:00:00.000Z'},
+ {id:'demo-nia-aeropress',ownerId:'demo-nia',ownerName:'Nia Chen',ownerHandle:'nia-recipes',method:'AeroPress',title:'Funky anaerobic inverted cup',visibility:'public',beanName:'Colombia El Paraiso',roaster:'Pilot',origin:'Colombia',process:'Anaerobic',roastLevel:'Light',params:{grind:36,dose:16,water:240,totalTime:150,temp:90},tags:['Fruity','Funky','Sweet','Light'],score:8.4,notes:'Lower temp reins in ferment while keeping tropical fruit.',saves:7,createdAt:'2026-05-24T12:00:00.000Z',updatedAt:'2026-05-24T12:00:00.000Z'}
+]}
+function ensureCommunity(o){
+ o=o||{}; let c=o.community||{};
+ c.user={...defaultCommunityUser(),...(c.user||{})};
+ c.user.handle=(c.user.handle||c.user.displayName||'home-barista').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'home-barista';
+ if(!Array.isArray(c.recipes))c.recipes=[];
+ if(!Array.isArray(c.savedRecipeIds))c.savedRecipeIds=['demo-luna-espresso'];
+ if(!Array.isArray(c.follows))c.follows=['demo-ana'];
+ if(!Array.isArray(c.events))c.events=[];
+ c.sync={apiBase:'',enabled:false,lastSyncAt:'',lastError:'',...(c.sync||{})};
+ o.community=c;
+ const existing=new Map(c.recipes.map(r=>[r.id,r]));
+ const profileRecipes=recipesFromProfiles(o,c).map(r=>{
+  const old=existing.get(r.id)||{};
+  return {...old,...r,visibility:old.visibility||r.visibility,saves:old.saves??r.saves,createdAt:old.createdAt||r.createdAt,updatedAt:old.updatedAt||r.updatedAt}
+ });
+ const profileIds=new Set(profileRecipes.map(r=>r.id));
+ const demos=demoCommunityRecipes().map(r=>({...r,...(existing.get(r.id)||{})}));
+ const demoIds=new Set(demos.map(r=>r.id));
+ const remaining=c.recipes.filter(r=>!profileIds.has(r.id)&&!demoIds.has(r.id));
+ c.recipes=[...profileRecipes,...remaining,...demos];
+ return o;
+}
+function recipesFromProfiles(o,c){let out=[]; (o.beans||[]).forEach(b=>Object.entries(b.brewProfiles||{}).forEach(([m,arr])=>(arr||[]).forEach(p=>out.push(profileToRecipe(b,m,p,c))))); return out}
+function profileRecipeId(b,m,p){return ['profile',b.id,m,p.id].join('-').replace(/[^a-zA-Z0-9_-]/g,'-')}
+function profileToRecipe(b,m,p,c){
+ const isEsp=m==='Espresso', params={grind:p.grind,dose:p.dose,temp:tempVal(p,m)};
+ if(isEsp)Object.assign(params,{yieldOut:p.yieldOut,time:p.time,ratio:p.ratio||ratio(p)}); else Object.assign(params,{water:p.water,totalTime:p.totalTime,bloom:p.bloom,stages:p.stages||[]});
+ const tags=recipeTags(b,p,m);
+ return {id:profileRecipeId(b,m,p),ownerId:c.user.id,ownerName:c.user.displayName,ownerHandle:c.user.handle,method:m,title:p.name&&p.name!=='Current'?p.name:`${b.name} ${m}`,visibility:'private',sourceBeanId:b.id,sourceProfileId:p.id,beanName:b.name,roaster:b.roaster,origin:b.origin,process:b.process,roastLevel:b.roastLevel,params,tags,score:+(p.score||0),notes:p.notes||'',saves:0,createdAt:p.createdAt||iso(),updatedAt:p.updatedAt||p.createdAt||iso()}
+}
+function recipeTags(b,p,m){let text=[b.name,b.roaster,b.origin,b.process,b.roastLevel,p.notes,m].join(' ').toLowerCase(); let tags=[m,b.roastLevel].filter(Boolean); flavourTags.forEach(t=>{if(text.includes(t.toLowerCase()))tags.push(t)}); return [...new Set(tags)]}
+function recipeById(id){ensureCommunity(state); return state.community.recipes.find(r=>r.id===id)}
+function apiBase(){return (state.community?.sync?.apiBase||'').trim().replace(/\/+$/,'')}
+function trackEvent(type,payload={}){
+ ensureCommunity(state);
+ const event={id:uid(),type,payload,userId:state.community.user.id,createdAt:iso()};
+ state.community.events.unshift(event);
+ state.community.events=state.community.events.slice(0,200);
+ save();
+ sendEvent(event);
+}
+async function sendEvent(event){
+ const base=apiBase(); if(!base||!state.community.sync.enabled)return;
+ try{await fetch(base+'/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(event)})}catch(e){state.community.sync.lastError='Event sync failed'; save()}
+}
+async function syncCommunity(silent=false){
+ ensureCommunity(state);
+ const base=apiBase();
+ if(!base){toast('Add a backend URL in More');return}
+ const mine=state.community.recipes.filter(r=>r.ownerId===state.community.user.id&&r.visibility==='public');
+ try{
+  await fetch(base+'/api/recipes/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipes:mine})});
+  const res=await fetch(base+'/api/recipes');
+  if(!res.ok)throw new Error('Recipe sync failed');
+  const remote=await res.json();
+  const merged=new Map(state.community.recipes.map(r=>[r.id,r]));
+  (remote.recipes||[]).forEach(r=>{if(r.ownerId!==state.community.user.id)merged.set(r.id,r)});
+  state.community.recipes=[...merged.values()];
+  state.community.sync.lastSyncAt=iso();
+  state.community.sync.lastError='';
+  save();
+  if(!silent){render(); toast('Recipe library synced')}
+ }catch(e){
+  state.community.sync.lastError=e.message||'Sync failed';
+  save();
+  if(!silent)toast(state.community.sync.lastError);
+ }
+}
+function recipesView(){
+ ensureCommunity(state);
+ const c=state.community, count=recipeResults().length;
+ return `<section class="card recipes-head"><h2>Recipes</h2><p>Build your library from dialed-in profiles, save recipes from other users, and rank discovery by your roast and taste preferences.</p><div class="tabs recipe-tabs"><button class="${recipeTab==='library'?'sel':''}" onclick="recipeTab='library';render()">My Library</button><button class="${recipeTab==='discover'?'sel':''}" onclick="recipeTab='discover';render()">Discover</button><button class="${recipeTab==='following'?'sel':''}" onclick="recipeTab='following';render()">Following</button></div><input id="recipeSearch" placeholder="Search recipes, users, beans, or flavors" value="${esc(recipeQuery)}" oninput="recipeQuery=this.value;drawRecipeList()"><div class="filter-row"><select onchange="recipeMethod=this.value;render()"><option ${recipeMethod==='All'?'selected':''}>All</option>${brewMethods.map(m=>`<option ${recipeMethod===m?'selected':''}>${m}</option>`).join('')}</select><select onchange="recipeRoast=this.value;render()"><option ${recipeRoast==='All'?'selected':''}>All</option>${['Light','Medium','Dark'].map(r=>`<option ${recipeRoast===r?'selected':''}>${r}</option>`).join('')}</select></div><button class="btn secondary full ${recipeMatchPrefs?'selected-filter':''}" onclick="recipeMatchPrefs=!recipeMatchPrefs;render()">Taste match ${recipeMatchPrefs?'on':'off'}</button><button class="btn full" onclick="openRecipeForm()">Create Standalone Recipe</button><div class="muted count-line"><span id="recipeCount">${count}</span> recipes shown · @${esc(c.user.handle)}</div></section><section class="card recipe-list-card"><div id="recipeList">${recipeResults().map(recipeCard).join('')||'<p>No matching recipes yet.</p>'}</div></section>`
+}
+function recipeResults(){
+ ensureCommunity(state);
+ const c=state.community, q=recipeQuery.trim().toLowerCase();
+ let list=c.recipes.filter(r=>{
+  const mine=r.ownerId===c.user.id, saved=c.savedRecipeIds.includes(r.id), following=c.follows.includes(r.ownerId);
+  if(recipeTab==='library'&&!(mine||saved))return false;
+  if(recipeTab==='discover'&&(mine||r.visibility!=='public'))return false;
+  if(recipeTab==='following'&&!(following&&r.visibility==='public'))return false;
+  if(recipeMethod!=='All'&&r.method!==recipeMethod)return false;
+  if(recipeRoast!=='All'&&r.roastLevel!==recipeRoast)return false;
+  if(q&&!recipeSearchText(r).includes(q))return false;
+  return true;
+ });
+ if(recipeMatchPrefs)list.sort((a,b)=>recipeMatchScore(b)-recipeMatchScore(a)||new Date(b.updatedAt)-new Date(a.updatedAt));
+ else list.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
+ return list;
+}
+function recipeSearchText(r){return [r.title,r.ownerName,r.ownerHandle,r.method,r.beanName,r.roaster,r.origin,r.process,r.roastLevel,(r.tags||[]).join(' '),r.notes].join(' ').toLowerCase()}
+function preferredRoast(){let v=state.userProfile?.flavour?.roast??50; return v>65?'Light':v<35?'Dark':'Medium'}
+function recipeMatchScore(r){
+ const prefs=state.userProfile?.flavour?.notes||[], tags=r.tags||[];
+ let score=+(r.score||0);
+ prefs.forEach(p=>{if(tags.includes(p))score+=2});
+ if(r.roastLevel===preferredRoast())score+=2.5;
+ if(state.community.follows.includes(r.ownerId))score+=1;
+ if(state.community.savedRecipeIds.includes(r.id))score+=1;
+ return score;
+}
+function drawRecipeList(){let el=$('#recipeList'); if(!el)return; let list=recipeResults(); el.innerHTML=list.map(recipeCard).join('')||'<p>No matching recipes yet.</p>'; let count=$('#recipeCount'); if(count)count.textContent=list.length}
+function recipeParamLine(r){let p=r.params||{}; if(r.method==='Espresso')return `${p.dose||'—'}g in · ${p.yieldOut||'—'}g out · ${fmt(p.time||0)}s · ${p.temp||'—'}°`; return `${p.dose||'—'}g coffee · ${p.water||'—'}g water · ${fmt(p.totalTime||0)} · ${p.temp||'—'}°`}
+function recipeCard(r){
+ const c=state.community, mine=r.ownerId===c.user.id, saved=c.savedRecipeIds.includes(r.id), following=c.follows.includes(r.ownerId);
+ return `<article class="recipe-card click" onclick="recipeDetail('${r.id}')"><div class="recipe-top"><span class="pill">${esc(r.method)}</span><span class="match">${Math.round(recipeMatchScore(r)*10)/10} match</span></div><h3>${esc(r.title)}</h3><p>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · '))}</p><div class="recipe-meta"><b>${r.score||'—'}</b><span>${esc(recipeParamLine(r))}</span></div><div class="tag-row">${(r.tags||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div><div class="recipe-owner"><span>@${esc(r.ownerHandle||'user')}</span><div>${mine?`<button onclick="event.stopPropagation();publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public':'Publish'}</button>`:`<button onclick="event.stopPropagation();saveCommunityRecipe('${r.id}')">${saved?'Saved':'Save'}</button><button onclick="event.stopPropagation();toggleFollow('${r.ownerId}')">${following?'Following':'Follow'}</button>`}</div></div></article>`
+}
+function saveCommunityRecipe(id){ensureCommunity(state); if(!state.community.savedRecipeIds.includes(id))state.community.savedRecipeIds.push(id); trackEvent('recipe.saved',{recipeId:id}); save(); render(); toast('Recipe saved to library')}
+function publishRecipe(id){let r=recipeById(id); if(!r)return; r.visibility='public'; r.ownerName=state.community.user.displayName; r.ownerHandle=state.community.user.handle; r.updatedAt=iso(); trackEvent('recipe.published',{recipeId:id}); save(); syncCommunity(true); render(); toast('Recipe published')}
+function toggleFollow(userId){ensureCommunity(state); if(userId===state.community.user.id){toast('This is your profile');return} let f=state.community.follows, i=f.indexOf(userId); if(i>=0)f.splice(i,1); else f.push(userId); trackEvent(i>=0?'user.unfollowed':'user.followed',{userId}); save(); render()}
+function recipeDetail(id){
+ const r=recipeById(id); if(!r)return;
+ const mine=r.ownerId===state.community.user.id, saved=state.community.savedRecipeIds.includes(r.id), following=state.community.follows.includes(r.ownerId);
+ const stages=(r.params?.stages||[]).map(s=>`<div><span>${esc(s.name)}</span>${s.time}s · ${s.weight}g</div>`).join('');
+ const editButton=mine?`<button class="edit-icon modal-edit" onclick="openRecipeForm('${r.id}')">${icon('pencil')}</button>`:'';
+ modal(`${editButton}<h2>${esc(r.title)}</h2><div class="hero-detail"><b>${r.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Creator</span>@${esc(r.ownerHandle||'user')}</div><div><span>Method</span>${esc(r.method)}</div><div><span>Bean</span>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · ')||'Standalone')}</div><div><span>Roast</span>${esc(r.roastLevel||'—')}</div><div><span>Recipe</span>${esc(recipeParamLine(r))}</div><div><span>Tags</span>${esc((r.tags||[]).join(', ')||'—')}</div><div><span>Notes</span>${esc(r.notes||'—')}</div>${stages?`<div><span>Stages</span><section class="stage-detail">${stages}</section></div>`:''}</div>${mine?`<button class="btn full" onclick="publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public Recipe':'Publish Recipe'}</button>`:`<button class="btn full" onclick="saveCommunityRecipe('${r.id}')">${saved?'Saved to Library':'Save to My Library'}</button><button class="btn secondary full" onclick="toggleFollow('${r.ownerId}')">${following?'Unfollow':'Follow'} @${esc(r.ownerHandle||'user')}</button>`}<button class="btn secondary full" onclick="useCommunityRecipe('${r.id}')">${mine&&r.sourceBeanId?'Brew Using This Profile':'Copy to Current Bean'}</button>`)
+}
+function useCommunityRecipe(id){
+ const r=recipeById(id); if(!r)return;
+ if(r.ownerId===state.community.user.id&&r.sourceBeanId&&r.sourceProfileId){closeModal(); brewUsingProfile(r.sourceBeanId,r.method,r.sourceProfileId); return}
+ copyRecipeToCurrentBean(id);
+}
+function copyRecipeToCurrentBean(id){
+ const r=recipeById(id), b=currentBean(); if(!r||!b)return;
+ const p=r.params||{}, arr=b.brewProfiles[r.method]=b.brewProfiles[r.method]||[];
+ const profile={id:uid(),name:r.title,active:false,createdAt:iso(),score:+(r.score||0),grinderId:state.userProfile.grinders[0]?.id,grind:+(p.grind||0),dose:+(p.dose||0),temp:+(p.temp||0),notes:`Copied from @${r.ownerHandle||'user'}: ${r.notes||''}`};
+ if(r.method==='Espresso')Object.assign(profile,{yieldOut:+(p.yieldOut||0),time:+(p.time||0),ratio:p.ratio||ratio({dose:p.dose,yieldOut:p.yieldOut})}); else Object.assign(profile,{water:+(p.water||0),totalTime:+(p.totalTime||0),bloom:+(p.bloom||0),stages:p.stages||[]});
+ arr.push(profile);
+ trackEvent('recipe.copied',{recipeId:id,beanId:b.id});
+ selectedMethod=r.method;
+ save();
+ closeModal();
+ openBeanDetail(b.id);
+ toast('Recipe copied to current bean');
+}
+function openRecipeForm(id=''){
+ ensureCommunity(state);
+ const r=id?recipeById(id):{method:selectedMethod,title:'',roastLevel:preferredRoast(),params:{grind:18,dose:18,yieldOut:36,time:30,temp:93},tags:[...state.userProfile.flavour.notes],score:7.5,notes:'',visibility:'private'};
+ if(id&&r.ownerId!==state.community.user.id){toast('Save a copy before editing');return}
+ const p=r.params||{}, output=r.method==='Espresso'?(p.yieldOut||36):(p.water||320), time=r.method==='Espresso'?(p.time||30):(p.totalTime||180);
+ modal(`<h2>${id?'Edit':'Create'} Recipe</h2><label>Title</label><input id="recipeTitle" value="${esc(r.title||'')}"><label>Method</label><select id="recipeFormMethod">${brewMethods.map(m=>`<option ${r.method===m?'selected':''}>${m}</option>`).join('')}</select><label>Roast</label><select id="recipeFormRoast">${['Light','Medium','Dark'].map(x=>`<option ${r.roastLevel===x?'selected':''}>${x}</option>`).join('')}</select><div class="metric-grid"><label>Grind<input id="recipeGrind" type="number" step="0.1" value="${p.grind||18}"></label><label>Dose<input id="recipeDose" type="number" step="0.1" value="${p.dose||18}"></label></div><div class="metric-grid"><label>Output / Water<input id="recipeOutput" type="number" step="0.1" value="${output}"></label><label>Time<input id="recipeTime" type="number" step="0.1" value="${time}"></label></div><label>Temperature</label><input id="recipeTemp" type="number" step="1" value="${p.temp||93}">${ratingBlock(r.score||7.5)}<label>Taste Tags</label><div class="select-grid">${flavourTags.map(t=>`<button type="button" class="tile small ${(r.tags||[]).includes(t)?'selected':''}" data-recipe-tag="${t}" onclick="this.classList.toggle('selected')">${t}</button>`).join('')}</div><label>Notes</label><textarea id="recipeNotes">${esc(r.notes||'')}</textarea><button class="btn full" onclick="saveStandaloneRecipe('${id}')">Save Recipe</button>${id?`<button class="btn danger full" onclick="deleteCommunityRecipe('${id}')">Delete Recipe</button>`:''}`); updateRating(r.score||7.5)
+}
+function saveStandaloneRecipe(id=''){
+ ensureCommunity(state);
+ const method=$('#recipeFormMethod').value, isEsp=method==='Espresso', out=+$('#recipeOutput').value, time=+$('#recipeTime').value, roast=$('#recipeFormRoast').value;
+ const params={grind:+$('#recipeGrind').value,dose:+$('#recipeDose').value,temp:+$('#recipeTemp').value};
+ if(isEsp)Object.assign(params,{yieldOut:out,time,ratio:ratio({dose:params.dose,yieldOut:out})}); else Object.assign(params,{water:out,totalTime:time,bloom:0,stages:[]});
+ const old=id?recipeById(id):null, recipe={id:id||uid(),ownerId:state.community.user.id,ownerName:state.community.user.displayName,ownerHandle:state.community.user.handle,method,title:$('#recipeTitle').value||`${method} Recipe`,visibility:old?.visibility||'private',beanName:old?.beanName||'',roaster:old?.roaster||'',origin:old?.origin||'',process:old?.process||'',roastLevel:roast,params,tags:[...new Set([method,roast,...$$('[data-recipe-tag].selected').map(x=>x.dataset.recipeTag)])],score:+$('#rating').value,notes:$('#recipeNotes').value,saves:old?.saves||0,createdAt:old?.createdAt||iso(),updatedAt:iso()};
+ if(old)Object.assign(old,recipe); else state.community.recipes.unshift(recipe);
+ trackEvent(id?'recipe.updated':'recipe.created',{recipeId:recipe.id});
+ save();
+ closeModal();
+ view='recipes';
+ recipeTab='library';
+ render();
+ toast('Recipe saved');
+}
+function deleteCommunityRecipe(id){let r=recipeById(id); if(!r||r.ownerId!==state.community.user.id)return; if(confirm(`Delete recipe "${r.title}"?`)){state.community.recipes=state.community.recipes.filter(x=>x.id!==id); state.community.savedRecipeIds=state.community.savedRecipeIds.filter(x=>x!==id); trackEvent('recipe.deleted',{recipeId:id}); closeModal(); render()}}
+function moreView(){
+ ensureCommunity(state);
+ const c=state.community, last=c.sync.lastSyncAt?dateShort(c.sync.lastSyncAt):'Never';
+ return `<section class="card"><h2>Settings</h2><button class="btn full secondary" onclick="go('maintenance')">Maintenance Tracker</button><div class="tile ${state.settings.rateReminder?'selected':''}" onclick="state.settings.rateReminder=!state.settings.rateReminder;render()"><b>Ask me to rate my brew later</b><p>${state.settings.rateReminder?'Enabled':'Disabled'}</p></div><label>Rating reminder delay</label><select onchange="state.settings.rateDelay=this.value;save()"><option value="5" ${state.settings.rateDelay==5?'selected':''}>5 minutes</option><option value="10" ${state.settings.rateDelay==10?'selected':''}>10 minutes</option></select></section><section class="card"><h2>Community Profile</h2><label>Display Name</label><input id="communityName" value="${esc(c.user.displayName)}"><label>Handle</label><input id="communityHandle" value="${esc(c.user.handle)}"><label>Bio</label><textarea id="communityBio">${esc(c.user.bio||'')}</textarea><label>Backend API URL</label><input id="apiBase" placeholder="http://localhost:8787" value="${esc(c.sync.apiBase||'')}"><div class="tile ${c.sync.enabled?'selected':''}" onclick="toggleBackendSync()"><b>Backend sync</b><p>${c.sync.enabled?'Enabled':'Disabled'} · Last sync: ${last}</p></div>${c.sync.lastError?`<p class="error">${esc(c.sync.lastError)}</p>`:''}<button class="btn full" onclick="saveCommunitySettings()">Save Community Settings</button><button class="btn secondary full" onclick="syncCommunity()">Sync Recipes Now</button></section><section class="card"><h2>Data</h2><button class="btn full secondary" onclick="exportData()">Export Backup</button><button class="btn full secondary" onclick="document.getElementById('importBackup').click()">Import Backup</button><input type="file" id="importBackup" accept="application/json" hidden onchange="importData(event)"><button class="btn full secondary" onclick="localStorage.removeItem(KEY);location.reload()">Reset Demo Data</button></section>`
+}
+function toggleBackendSync(){ensureCommunity(state); state.community.sync.enabled=!state.community.sync.enabled; save(); render()}
+function saveCommunitySettings(){
+ ensureCommunity(state);
+ const c=state.community;
+ c.user.displayName=$('#communityName').value||'Home Barista';
+ c.user.handle=($('#communityHandle').value||c.user.displayName).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'home-barista';
+ c.user.bio=$('#communityBio').value;
+ c.sync.apiBase=$('#apiBase').value.trim();
+ c.recipes.forEach(r=>{if(r.ownerId===c.user.id){r.ownerName=c.user.displayName;r.ownerHandle=c.user.handle}});
+ trackEvent('community.settings.updated',{syncEnabled:c.sync.enabled});
+ save();
+ render();
+ toast('Community settings saved');
+}
+function importData(e){let f=e.target.files[0]; if(!f)return; let r=new FileReader(); r.onload=()=>{try{state=migrate(JSON.parse(r.result)); save(); render(); toast('Backup imported')}catch(err){toast('Import failed')}}; r.readAsText(f)}
+const originalSaveBrew=saveBrew;
+saveBrew=function(beanId,method){originalSaveBrew(beanId,method); trackEvent('brew.logged',{beanId,method})}
+const originalSaveRecipeProfile=saveRecipeProfile;
+saveRecipeProfile=function(beanId,m,pid){originalSaveRecipeProfile(beanId,m,pid); ensureCommunity(state); trackEvent(pid?'profile.updated':'profile.created',{beanId,method:m})}
+const originalSaveDialedProfile=saveDialedProfile;
+saveDialedProfile=function(beanId,method){originalSaveDialedProfile(beanId,method); ensureCommunity(state); trackEvent('profile.created',{beanId,method})}
+views.recipes=()=>recipesView();
+views.more=()=>moreView();
+ensureCommunity(state);
+render();
