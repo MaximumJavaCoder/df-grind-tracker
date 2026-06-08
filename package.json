@@ -2,12 +2,14 @@
   "name": "brew-library",
   "version": "0.1.0",
   "private": true,
-  "description": "Local-first coffee recipe and dial-in PWA with mobile packaging and a lightweight recipe sync API.",
+  "description": "Mobile-first coffee recipe app for iOS and Android with a lightweight recipe sync API.",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
     "check": "node --check app.js && node --check server.js",
     "mobile:prepare": "node prepare-mobile.js",
+    "mobile:add:ios": "npm run mobile:prepare && npx cap add ios",
+    "mobile:add:android": "npm run mobile:prepare && npx cap add android",
     "mobile:sync": "npm run mobile:prepare && npx cap sync",
     "mobile:ios": "npx cap open ios",
     "mobile:android": "npx cap open android"

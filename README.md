@@ -1,6 +1,6 @@
 # Brew Library
 
-Brew Library is a local-first coffee dial-in PWA for beans, brews, maintenance, reusable recipes, and community discovery.
+Brew Library is a mobile-first coffee recipe app for iPhone and Android. It tracks beans, brews, maintenance, reusable recipes, community discovery, follows, and recipe ratings.
 
 ## Run locally
 
@@ -10,18 +10,22 @@ npm start
 
 The app and API are served from `http://localhost:8787` by default. Set `PORT` to use a different port.
 
-## Mobile app packaging
+## iPhone and Android app target
 
-This repo is configured for Capacitor so the same PWA can be packaged for iPhone and Android.
+This repo is configured for Capacitor so Brew Library can ship as downloadable native apps through the Apple App Store and Google Play Store. The current UI is implemented with web technologies inside a native shell; production App Store work should focus on native sign-in plugins, push notifications, store assets, privacy disclosures, and native project hardening.
 
 ```bash
 npm run mobile:prepare
+npm run mobile:add:ios
+npm run mobile:add:android
 npm run mobile:sync
 npm run mobile:ios
 npm run mobile:android
 ```
 
-The `mobile:prepare` script generates a static `www/` bundle for Capacitor. Native projects can then be added and opened with the Capacitor CLI. Real Apple, Google, and Facebook sign-in should be implemented with native provider SDKs/plugins that exchange provider tokens with `POST /api/auth/social`.
+The `mobile:prepare` script generates a static `www/` bundle for Capacitor. `mobile:add:ios` and `mobile:add:android` create the native projects. Real Apple, Google, and Facebook sign-in should be implemented with native provider SDKs/plugins that exchange provider tokens with `POST /api/auth/social`.
+
+See [APP_STORE.md](APP_STORE.md) for the mobile release checklist.
 
 ## Recipe/community prototype
 
