@@ -666,6 +666,12 @@ function installPressHaptics(){
  },{passive:true});
 }
 installPressHaptics();
+function logNotesSection(method){return `<section class="inner-card brew-notes-section"><h3>Brew Notes</h3><p>Add anything you want to remember about this ${esc(method)} brew.</p><textarea id="notes" placeholder="What changed, what worked, drawdown, aroma, taste notes, next adjustment..."></textarea></section>`}
+function logView(pref={}){
+ let b=bean(pref.beanId)||currentBean(); let m=pref.method||selectedMethod||'Espresso'; let p=pref.profileId?activeProfile(b,m):activeProfile(b,m); let temp=tempVal(p,m), gId=p?.grinderId||lastBrew(b?.id,m)?.grinderId||profileData().grinders[0]?.id;
+ const isEsp=m==='Espresso', isPour=m==='Pour Over';
+ return `<section class="card"><h2>Log Brew</h2><div class="seg"><button class="sel">Existing Bean</button><button onclick="openBeanForm()">New Bean</button></div><label>Bean</label><select id="logBean" onchange="state.currentBeanId=this.value;render()">${state.beans.filter(x=>x.status==='current').map(x=>`<option value="${x.id}" ${x.id===b?.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><label>Brew Method</label>${methodSelector(m,'log','')}${settingBlock(p?.grind||lastBrew(b?.id,m)?.grind||18.6,gId)}<div class="metric-grid"><label>Dose<input id="dose" type="number" step="0.1" value="${p?.dose||18}"></label>${isEsp?`<label>Yield<input id="yieldOut" type="number" step="0.1" value="${p?.yieldOut||36}"></label>`:`<label>Water<input id="water" type="number" step="1" value="${p?.water||320}"></label>`}</div><label>Temperature</label><input id="temp" type="number" step="1" value="${temp}">${isPour?pourControls(p,b):timerBlock(m)}${ratingBlock(7.5)}<label>Flavour Description</label><div class="select-grid">${flavourButtons()}</div>${logNotesSection(m)}<button class="btn full" onclick="saveBrew('${b?.id||''}','${m}')">Save Brew</button><button class="btn secondary full" onclick="saveDialedProfile('${b?.id||''}','${m}')">Save Dialed-In Profile</button></section>`;
+}
 views.recipes=()=>recipesView();
 views.more=()=>moreView();
 ensureCommunity(state);
