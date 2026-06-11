@@ -53,6 +53,16 @@ npm run seed:machines -- /path/to/home_espresso_machines.seed.json
 npm run seed:grinders -- /path/to/grinder_manufacturer_model_backend_database.seed.json
 ```
 
+Supabase reference-data import after running the initial reference/profile migration:
+
+```bash
+export SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+npm run supabase:import-reference
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` is only for this local import script. Do not add it to app code, Capacitor config, public `.env` files, or any client bundle.
+
 ## API endpoints
 
 - `GET /api/health`
