@@ -6,6 +6,7 @@ const { randomUUID } = require('crypto');
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8787);
 const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, 'brew-library-data.json');
+const EQUIPMENT_SEED_FILE = process.env.EQUIPMENT_SEED_FILE || path.join(ROOT, 'data', 'equipment-seed.json');
 const JSON_LIMIT = 1024 * 1024;
 
 const TYPES = {
@@ -20,21 +21,39 @@ const TYPES = {
 function readDb() {
   try {
     const db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    return {
+    return ensureDbShape({
       recipes: db.recipes || [],
       events: db.events || [],
       follows: db.follows || [],
       users: db.users || [],
       ratings: db.ratings || [],
       sessions: db.sessions || [],
-    };
+      manufacturers: db.manufacturers || [],
+      machine_models: db.machine_models || [],
+      aliases: db.aliases || [],
+      user_suggested_entries: db.user_suggested_entries || [],
+      seed_imports: db.seed_imports || [],
+    });
   } catch (error) {
-    return { recipes: [], events: [], follows: [], users: [], ratings: [], sessions: [] };
+    return ensureDbShape({ recipes: [], events: [], follows: [], users: [], ratings: [], sessions: [], manufacturers: [], machine_models: [], aliases: [], user_suggested_entries: [], seed_imports: [] });
   }
 }
 
 function writeDb(db) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+}
+
+function ensureDbShape(db) {
+  db.manufacturers = db.manufacturers || [];
+  db.machine_models = db.machine_models || [];
+  db.aliases = db.aliases || [];
+  db.user_suggested_entries = db.user_suggested_entries || [];
+  db.seed_imports = db.seed_imports || [];
+  if (!db.manufacturers.length && fs.existsSync(EQUIPMENT_SEED_FILE)) {
+    const seed = JSON.parse(fs.readFileSync(EQUIPMENT_SEED_FILE, 'utf8'));
+    importEquipmentSeed(db, seed, { sourceFile: path.basename(EQUIPMENT_SEED_FILE) });
+  }
+  return db;
 }
 
 function send(res, code, body, type = 'application/json; charset=utf-8') {
@@ -67,6 +86,206 @@ function readJson(req) {
     });
     req.on('error', reject);
   });
+}
+
+function normalizeText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/['’`]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function slugify(value = '') {
+  return normalizeText(value).replace(/\s+/g, '-') || `entry-${Date.now()}`;
+}
+
+function importEquipmentSeed(db, seed, meta = {}) {
+  const now = new Date().toISOString();
+  const manufacturers = seed.manufacturers || [];
+  const models = seed.machine_models || [];
+  const aliases = seed.aliases || [];
+  const importedManufacturers = new Set(db.manufacturers.map(m => m.id));
+  const importedModels = new Set(db.machine_models.map(m => m.id));
+  const importedAliases = new Set(db.aliases.map(a => `${a.entity_type}:${a.entity_id}:${normalizeText(a.alias_text)}`));
+
+  manufacturers.forEach(manufacturer => {
+    if (!importedManufacturers.has(manufacturer.id)) {
+      db.manufacturers.push({ ...manufacturer, normalized_canonical_name: normalizeText(manufacturer.canonical_name), createdAt: manufacturer.createdAt || now, updatedAt: now });
+      importedManufacturers.add(manufacturer.id);
+    }
+  });
+
+  models.forEach(model => {
+    if (!importedModels.has(model.id)) {
+      db.machine_models.push({
+        ...model,
+        normalized_canonical_name: normalizeText(model.canonical_name),
+        normalized_display_name: normalizeText(model.display_name),
+        createdAt: model.createdAt || now,
+        updatedAt: now,
+      });
+      importedModels.add(model.id);
+    }
+  });
+
+  aliases.forEach(alias => {
+    const key = `${alias.entity_type}:${alias.entity_id}:${normalizeText(alias.alias_text)}`;
+    if (!importedAliases.has(key)) {
+      db.aliases.push({ id: alias.id || randomUUID(), ...alias, normalized_alias_text: alias.normalized_alias_text || normalizeText(alias.alias_text), createdAt: alias.createdAt || now, updatedAt: now });
+      importedAliases.add(key);
+    }
+  });
+
+  db.seed_imports.push({
+    id: randomUUID(),
+    seed_name: seed.seed_name || meta.sourceFile || 'equipment-seed',
+    schema_version: seed.schema_version || '',
+    sourceFile: meta.sourceFile || '',
+    importedAt: now,
+    counts: {
+      manufacturers: manufacturers.length,
+      machine_models: models.length,
+      aliases: aliases.length,
+    },
+  });
+  return db;
+}
+
+function manufacturerById(db, id) {
+  return db.manufacturers.find(m => m.id === id);
+}
+
+function modelById(db, id) {
+  return db.machine_models.find(m => m.id === id);
+}
+
+function equipmentSearchRows(db) {
+  const rows = [];
+  db.manufacturers.forEach(manufacturer => {
+    rows.push({
+      type: 'manufacturer',
+      id: manufacturer.id,
+      manufacturerId: manufacturer.id,
+      manufacturerName: manufacturer.canonical_name,
+      label: manufacturer.canonical_name,
+      normalized: normalizeText(manufacturer.canonical_name),
+      source: 'canonical_name',
+      manufacturer,
+    });
+  });
+  db.machine_models.forEach(model => {
+    const manufacturer = manufacturerById(db, model.manufacturer_id);
+    rows.push({
+      type: 'machine_model',
+      id: model.id,
+      modelId: model.id,
+      manufacturerId: model.manufacturer_id,
+      manufacturerName: manufacturer?.canonical_name || model.manufacturer_id,
+      modelName: model.canonical_name,
+      label: model.display_name || [manufacturer?.canonical_name, model.canonical_name].filter(Boolean).join(' '),
+      normalized: normalizeText([model.canonical_name, model.display_name].filter(Boolean).join(' ')),
+      source: 'canonical_name/display_name',
+      model,
+      manufacturer,
+    });
+  });
+  db.aliases.forEach(alias => {
+    const model = alias.entity_type === 'machine_model' ? modelById(db, alias.entity_id) : null;
+    const manufacturer = alias.entity_type === 'manufacturer' ? manufacturerById(db, alias.entity_id) : manufacturerById(db, model?.manufacturer_id);
+    rows.push({
+      type: alias.entity_type,
+      id: alias.entity_id,
+      aliasId: alias.id,
+      modelId: model?.id,
+      manufacturerId: manufacturer?.id,
+      manufacturerName: manufacturer?.canonical_name,
+      modelName: model?.canonical_name,
+      label: alias.alias_text,
+      normalized: alias.normalized_alias_text || normalizeText(alias.alias_text),
+      source: 'alias',
+      alias,
+      model,
+      manufacturer,
+    });
+  });
+  return rows;
+}
+
+function autocompleteEquipment(db, query, limit = 12) {
+  const q = normalizeText(query);
+  if (!q) return [];
+  const scored = equipmentSearchRows(db)
+    .map(row => {
+      const fields = [row.label, row.normalized, row.manufacturerName, row.modelName, row.model?.display_name].map(normalizeText);
+      let score = 0;
+      fields.forEach(field => {
+        if (!field) return;
+        if (field === q) score = Math.max(score, 100);
+        else if (field.startsWith(q)) score = Math.max(score, 80);
+        else if (field.includes(q)) score = Math.max(score, 50);
+      });
+      return { ...row, score };
+    })
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
+  const seen = new Set();
+  return scored.filter(row => {
+    const key = `${row.type}:${row.id}:${row.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, limit);
+}
+
+function findEquipmentMatch(db, input) {
+  const q = normalizeText([input.manufacturer, input.model, input.text].filter(Boolean).join(' '));
+  const manufacturerQ = normalizeText(input.manufacturer || input.text || '');
+  const modelQ = normalizeText(input.model || input.text || '');
+  return equipmentSearchRows(db).find(row => {
+    const rowFull = normalizeText([row.manufacturerName, row.modelName, row.label].filter(Boolean).join(' '));
+    return rowFull === q || row.normalized === q || row.normalized === manufacturerQ || row.normalized === modelQ;
+  });
+}
+
+function createSuggestion(db, input) {
+  const now = new Date().toISOString();
+  const suggestion = {
+    id: randomUUID(),
+    manufacturer: input.manufacturer || '',
+    model: input.model || '',
+    display_name: input.display_name || [input.manufacturer, input.model].filter(Boolean).join(' '),
+    text: input.text || '',
+    normalized_text: normalizeText([input.manufacturer, input.model, input.display_name, input.text].filter(Boolean).join(' ')),
+    status: 'pending',
+    userId: input.userId || '',
+    createdAt: now,
+    updatedAt: now,
+    notes: input.notes || '',
+  };
+  db.user_suggested_entries.unshift(suggestion);
+  return suggestion;
+}
+
+function addAlias(db, entityType, entityId, aliasText, source = 'admin') {
+  const normalized = normalizeText(aliasText);
+  const exists = db.aliases.find(a => a.entity_type === entityType && a.entity_id === entityId && (a.normalized_alias_text || normalizeText(a.alias_text)) === normalized);
+  if (exists) return exists;
+  const alias = { id: randomUUID(), entity_type: entityType, entity_id: entityId, alias_text: aliasText, normalized_alias_text: normalized, source, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  db.aliases.unshift(alias);
+  return alias;
+}
+
+function updateSuggestionStatus(db, suggestionId, status, resolution = {}) {
+  const suggestion = db.user_suggested_entries.find(s => s.id === suggestionId);
+  if (!suggestion) return null;
+  suggestion.status = status;
+  suggestion.resolution = resolution;
+  suggestion.updatedAt = new Date().toISOString();
+  return suggestion;
 }
 
 function publicRecipe(recipe) {
@@ -142,7 +361,124 @@ async function handleApi(req, res, url) {
   const db = readDb();
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return send(res, 200, { ok: true, recipes: db.recipes.length, users: db.users.length, follows: db.follows.length, ratings: db.ratings.length, events: db.events.length });
+    return send(res, 200, { ok: true, recipes: db.recipes.length, users: db.users.length, follows: db.follows.length, ratings: db.ratings.length, events: db.events.length, manufacturers: db.manufacturers.length, machine_models: db.machine_models.length, aliases: db.aliases.length, user_suggested_entries: db.user_suggested_entries.length });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/equipment/autocomplete') {
+    const q = url.searchParams.get('q') || '';
+    const limit = Math.min(50, Number(url.searchParams.get('limit') || 12));
+    return send(res, 200, { results: autocompleteEquipment(db, q, limit) });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/equipment/manufacturers') {
+    return send(res, 200, { manufacturers: db.manufacturers });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/equipment/models') {
+    const manufacturerId = url.searchParams.get('manufacturerId');
+    const models = manufacturerId ? db.machine_models.filter(model => model.manufacturer_id === manufacturerId) : db.machine_models;
+    return send(res, 200, { machine_models: models });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/equipment/aliases') {
+    const entityId = url.searchParams.get('entityId');
+    const aliases = entityId ? db.aliases.filter(alias => alias.entity_id === entityId) : db.aliases;
+    return send(res, 200, { aliases });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/equipment/suggestions') {
+    const body = await readJson(req);
+    const match = findEquipmentMatch(db, body);
+    if (match) return send(res, 200, { matched: true, match });
+    const suggestion = createSuggestion(db, body);
+    writeDb(db);
+    return send(res, 201, { matched: false, suggestion });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/admin/equipment/suggestions') {
+    const status = url.searchParams.get('status');
+    const suggestions = status ? db.user_suggested_entries.filter(s => s.status === status) : db.user_suggested_entries;
+    return send(res, 200, { suggestions });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/equipment/actions') {
+    const body = await readJson(req);
+    const suggestion = db.user_suggested_entries.find(s => s.id === body.suggestionId);
+    if (!suggestion) return send(res, 404, { error: 'Suggestion not found' });
+    const now = new Date().toISOString();
+    let result = null;
+
+    if (body.action === 'approve_as_new_manufacturer') {
+      const canonicalName = body.canonical_name || suggestion.manufacturer || suggestion.display_name || suggestion.text;
+      const manufacturer = {
+        id: body.id || slugify(canonicalName),
+        canonical_name: canonicalName,
+        slug: body.slug || slugify(canonicalName),
+        country: body.country || '',
+        category_focus: body.category_focus || '',
+        website_url: body.website_url || '',
+        model_count_from_source: 0,
+        notes: body.notes || suggestion.notes || '',
+        source: 'admin',
+        normalized_canonical_name: normalizeText(canonicalName),
+        createdAt: now,
+        updatedAt: now,
+      };
+      const existing = db.manufacturers.find(m => m.id === manufacturer.id);
+      if (existing) Object.assign(existing, manufacturer, { createdAt: existing.createdAt || now });
+      else db.manufacturers.unshift(manufacturer);
+      result = existing || manufacturer;
+      updateSuggestionStatus(db, suggestion.id, 'approved', { action: body.action, manufacturerId: result.id });
+    } else if (body.action === 'approve_as_new_model') {
+      const manufacturerId = body.manufacturer_id || suggestion.manufacturer_id || slugify(suggestion.manufacturer);
+      if (!db.manufacturers.find(m => m.id === manufacturerId)) {
+        const manufacturerName = body.manufacturer || suggestion.manufacturer || manufacturerId;
+        db.manufacturers.unshift({ id: manufacturerId, canonical_name: manufacturerName, slug: slugify(manufacturerName), normalized_canonical_name: normalizeText(manufacturerName), source: 'admin', createdAt: now, updatedAt: now });
+      }
+      const canonicalName = body.canonical_name || suggestion.model || suggestion.display_name || suggestion.text;
+      const model = {
+        id: body.id || `${manufacturerId}_${slugify(canonicalName).replace(/-/g, '_')}`,
+        manufacturer_id: manufacturerId,
+        canonical_name: canonicalName,
+        display_name: body.display_name || suggestion.display_name || [manufacturerById(db, manufacturerId)?.canonical_name, canonicalName].filter(Boolean).join(' '),
+        slug: body.slug || slugify(canonicalName),
+        category: body.category || '',
+        machine_type: body.machine_type || '',
+        country: body.country || '',
+        lifecycle: body.lifecycle || '',
+        home_relevance: body.home_relevance || '',
+        is_home_machine: body.is_home_machine ?? true,
+        notes: body.notes || suggestion.notes || '',
+        source: 'admin',
+        normalized_canonical_name: normalizeText(canonicalName),
+        normalized_display_name: normalizeText(body.display_name || suggestion.display_name || canonicalName),
+        createdAt: now,
+        updatedAt: now,
+      };
+      const existing = db.machine_models.find(m => m.id === model.id);
+      if (existing) Object.assign(existing, model, { createdAt: existing.createdAt || now });
+      else db.machine_models.unshift(model);
+      result = existing || model;
+      updateSuggestionStatus(db, suggestion.id, 'approved', { action: body.action, modelId: result.id, manufacturerId });
+    } else if (body.action === 'add_as_alias_to_existing_model') {
+      const modelId = body.model_id;
+      if (!modelById(db, modelId)) return send(res, 400, { error: 'model_id is required and must exist' });
+      result = addAlias(db, 'machine_model', modelId, body.alias_text || suggestion.display_name || suggestion.text || suggestion.model, 'admin');
+      updateSuggestionStatus(db, suggestion.id, 'approved', { action: body.action, aliasId: result.id, modelId });
+    } else if (body.action === 'merge_with_existing_entry') {
+      const entityType = body.entity_type || 'machine_model';
+      const entityId = body.entity_id;
+      if (!entityId) return send(res, 400, { error: 'entity_id is required' });
+      result = addAlias(db, entityType, entityId, body.alias_text || suggestion.display_name || suggestion.text || suggestion.model || suggestion.manufacturer, 'admin-merge');
+      updateSuggestionStatus(db, suggestion.id, 'merged', { action: body.action, entityType, entityId, aliasId: result.id });
+    } else if (body.action === 'reject') {
+      result = updateSuggestionStatus(db, suggestion.id, 'rejected', { action: body.action, reason: body.reason || '' });
+    } else {
+      return send(res, 400, { error: 'Unknown admin action' });
+    }
+
+    writeDb(db);
+    return send(res, 200, { suggestion, result });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/auth/social') {

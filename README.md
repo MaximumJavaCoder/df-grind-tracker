@@ -36,12 +36,35 @@ See [APP_STORE.md](APP_STORE.md) for the mobile release checklist.
 - Users can rate public recipes and sync those ratings to the backend.
 - Backend sync is optional. In the app, open **More**, set the Backend API URL, enable sync, and click **Sync Recipes Now**.
 
+## Equipment database and admin tools
+
+The backend bootstraps espresso machine manufacturers, models, and aliases from `data/equipment-seed.json` when the database has no equipment records. After that initial import, the JSON database is the source of truth and equipment edits should happen through the backend/admin tools.
+
+Admin UI:
+
+```text
+http://localhost:8787/admin.html
+```
+
+One-time seed import command:
+
+```bash
+npm run seed:machines -- /path/to/home_espresso_machines.seed.json
+```
+
 ## API endpoints
 
 - `GET /api/health`
 - `POST /api/auth/social`
 - `GET /api/users`
 - `POST /api/users`
+- `GET /api/equipment/autocomplete`
+- `GET /api/equipment/manufacturers`
+- `GET /api/equipment/models`
+- `GET /api/equipment/aliases`
+- `POST /api/equipment/suggestions`
+- `GET /api/admin/equipment/suggestions`
+- `POST /api/admin/equipment/actions`
 - `GET /api/recipes`
 - `POST /api/recipes`
 - `POST /api/recipes/bulk`

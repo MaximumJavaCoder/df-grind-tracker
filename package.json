@@ -7,6 +7,7 @@
     "start": "node server.js",
     "dev": "node server.js",
     "check": "node --check app.js && node --check server.js",
+    "seed:machines": "node scripts/import-machine-seed.js",
     "mobile:prepare": "node prepare-mobile.js",
     "mobile:add:ios": "npm run mobile:prepare && npx cap add ios",
     "mobile:add:android": "npm run mobile:prepare && npx cap add android",
