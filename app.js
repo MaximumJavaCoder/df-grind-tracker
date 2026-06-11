@@ -862,6 +862,15 @@ function profilePanel(b,m,p,g){
  ].join('');
  return `<section class="profile-main"><div class="profile-title"><h3>${esc(m)} —<br>Current Profile</h3><span>Dialed In</span></div><div class="profile-circles"><div class="gauge grind"><b>${p.grind??'—'}</b><small>Grind Setting</small><em>${esc(grinderModel(g)||g.name||'—')}</em></div><div class="score-ring" style="--scoreColor:${c}"><b>${score||'—'}</b><small>Taste Score</small></div></div><div class="profile-metric-grid">${metrics}</div><button class="btn full" onclick="brewUsingProfile('${b.id}','${m}','${p.id}')">Brew Using This Profile</button></section>`;
 }
+function openBeanDetail(id,modalOpen=true){
+ let b=bean(id); if(!b)return; if(!b.brewProfiles)b.brewProfiles={}; if(!b.brewProfiles[selectedMethod])selectedMethod=Object.keys(b.brewProfiles)[0]||'Espresso';
+ let p=activeProfile(b,selectedMethod), g=grinder(p?.grinderId||b.grinderId), recent=brewsFor(b.id,selectedMethod).slice(0,3);
+ const savedProfiles=`<section class="inner-card"><h3>Saved Profiles (${selectedMethod}) <button onclick="manageProfiles('${b.id}','${selectedMethod}')">Manage</button></h3><div class="saved-profiles">${(b.brewProfiles[selectedMethod]||[]).map(pr=>`<button class="${pr.active?'sel':''}" onclick="profileDetail('${b.id}','${selectedMethod}','${pr.id}')"><b>${esc(pr.name)}</b><small>${dateShort(pr.createdAt)} · ${pr.score||'—'} Score</small></button>`).join('')}<button class="add" onclick="profileForm('${b.id}','${selectedMethod}')">+<small>Add New</small></button></div></section>`;
+ const equipment=`<section class="inner-card"><h3>Equipment</h3><div class="equipment">${methodEquipmentCards(selectedMethod,g)}</div></section>`;
+ const recentBrews=`<section class="inner-card"><h3>Last 3 Brews <button onclick="showBeanHistory('${b.id}','${selectedMethod}')">View All (20)</button></h3><div class="mini-brews">${recent.map(x=>`<button onclick="brewDetail('${x.id}')"><small>${dateShort(x.createdAt)}</small><b>${x.rating||'—'}</b><span>${fmt(x.time||x.totalTime)}s</span></button>`).join('')||'<p>No brews yet.</p>'}</div></section>`;
+ let html=`<button class="back" onclick="closeModal()">${icon('back')}</button><button class="edit-icon modal-edit" onclick="openBeanForm('${b.id}')">${icon('pencil')}</button><div class="bean-hero"><button class="bag large ${b.photo?'has-photo':''}" onclick="pickPhoto('${b.id}')">${b.photo?`<img src="${b.photo}">`:'DF'}<em>${icon('camera')}</em></button><div><h1>${esc(b.name)}</h1><p>${esc([b.process,b.origin].filter(Boolean).join(' • '))}</p><span class="pill green">${b.status==='current'?'Current Bean':'Archived'}</span></div></div><h3>Brew Profiles</h3>${methodTabs(b,selectedMethod)}${profilePanel(b,selectedMethod,p,g)}${savedProfiles}${equipment}${recentBrews}`;
+ if(modalOpen)modal(html); else {$('.modal').innerHTML=`<div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}`;bind();}
+}
 views.recipes=()=>recipesView();
 views.more=()=>moreView();
 ensureCommunity(state);
