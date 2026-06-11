@@ -50,6 +50,7 @@ One-time seed import command:
 
 ```bash
 npm run seed:machines -- /path/to/home_espresso_machines.seed.json
+npm run seed:grinders -- /path/to/grinder_manufacturer_model_backend_database.seed.json
 ```
 
 ## API endpoints
@@ -65,6 +66,13 @@ npm run seed:machines -- /path/to/home_espresso_machines.seed.json
 - `POST /api/equipment/suggestions`
 - `GET /api/admin/equipment/suggestions`
 - `POST /api/admin/equipment/actions`
+- `GET /api/grinders/manufacturers/autocomplete`
+- `GET /api/grinders/models/autocomplete`
+- `GET /api/grinders/manufacturers`
+- `GET /api/grinders/models`
+- `POST /api/grinders/resolve`
+- `GET /api/admin/grinders/suggestions`
+- `POST /api/admin/grinders/actions`
 - `GET /api/recipes`
 - `POST /api/recipes`
 - `POST /api/recipes/bulk`

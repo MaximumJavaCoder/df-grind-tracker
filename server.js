@@ -7,6 +7,7 @@ const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8787);
 const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, 'brew-library-data.json');
 const EQUIPMENT_SEED_FILE = process.env.EQUIPMENT_SEED_FILE || path.join(ROOT, 'data', 'equipment-seed.json');
+const GRINDER_SEED_FILE = process.env.GRINDER_SEED_FILE || path.join(ROOT, 'data', 'grinder-equipment-seed.json');
 const JSON_LIMIT = 1024 * 1024;
 
 const TYPES = {
@@ -32,10 +33,14 @@ function readDb() {
       machine_models: db.machine_models || [],
       aliases: db.aliases || [],
       user_suggested_entries: db.user_suggested_entries || [],
+      grinder_manufacturers: db.grinder_manufacturers || [],
+      grinder_models: db.grinder_models || [],
+      grinder_aliases: db.grinder_aliases || [],
+      grinder_user_suggested_entries: db.grinder_user_suggested_entries || [],
       seed_imports: db.seed_imports || [],
     });
   } catch (error) {
-    return ensureDbShape({ recipes: [], events: [], follows: [], users: [], ratings: [], sessions: [], manufacturers: [], machine_models: [], aliases: [], user_suggested_entries: [], seed_imports: [] });
+    return ensureDbShape({ recipes: [], events: [], follows: [], users: [], ratings: [], sessions: [], manufacturers: [], machine_models: [], aliases: [], user_suggested_entries: [], grinder_manufacturers: [], grinder_models: [], grinder_aliases: [], grinder_user_suggested_entries: [], seed_imports: [] });
   }
 }
 
@@ -48,10 +53,18 @@ function ensureDbShape(db) {
   db.machine_models = db.machine_models || [];
   db.aliases = db.aliases || [];
   db.user_suggested_entries = db.user_suggested_entries || [];
+  db.grinder_manufacturers = db.grinder_manufacturers || [];
+  db.grinder_models = db.grinder_models || [];
+  db.grinder_aliases = db.grinder_aliases || [];
+  db.grinder_user_suggested_entries = db.grinder_user_suggested_entries || [];
   db.seed_imports = db.seed_imports || [];
   if (!db.manufacturers.length && fs.existsSync(EQUIPMENT_SEED_FILE)) {
     const seed = JSON.parse(fs.readFileSync(EQUIPMENT_SEED_FILE, 'utf8'));
     importEquipmentSeed(db, seed, { sourceFile: path.basename(EQUIPMENT_SEED_FILE) });
+  }
+  if (!db.grinder_manufacturers.length && fs.existsSync(GRINDER_SEED_FILE)) {
+    const seed = JSON.parse(fs.readFileSync(GRINDER_SEED_FILE, 'utf8'));
+    importGrinderSeed(db, seed, { sourceFile: path.basename(GRINDER_SEED_FILE) });
   }
   return db;
 }
@@ -133,7 +146,7 @@ function importEquipmentSeed(db, seed, meta = {}) {
   });
 
   aliases.forEach(alias => {
-    const key = `${alias.entity_type}:${alias.entity_id}:${normalizeText(alias.alias_text)}`;
+    const key = `${alias.entity_type}:${alias.entity_id}:${alias.normalized_alias_text || normalizeText(alias.alias_text)}`;
     if (!importedAliases.has(key)) {
       db.aliases.push({ id: alias.id || randomUUID(), ...alias, normalized_alias_text: alias.normalized_alias_text || normalizeText(alias.alias_text), createdAt: alias.createdAt || now, updatedAt: now });
       importedAliases.add(key);
@@ -150,6 +163,52 @@ function importEquipmentSeed(db, seed, meta = {}) {
       manufacturers: manufacturers.length,
       machine_models: models.length,
       aliases: aliases.length,
+    },
+  });
+  return db;
+}
+
+function importGrinderSeed(db, seed, meta = {}) {
+  const now = new Date().toISOString();
+  const manufacturers = seed.manufacturers || [];
+  const models = seed.grinder_models || [];
+  const aliases = seed.aliases || [];
+  const importedManufacturers = new Set(db.grinder_manufacturers.map(m => m.id));
+  const importedModels = new Set(db.grinder_models.map(m => m.id));
+  const importedAliases = new Set(db.grinder_aliases.map(a => `${a.entity_type}:${a.entity_id}:${normalizeText(a.alias_text)}`));
+
+  manufacturers.forEach(manufacturer => {
+    if (!importedManufacturers.has(manufacturer.id)) {
+      db.grinder_manufacturers.push({ ...manufacturer, normalized_canonical_name: manufacturer.normalized_canonical_name || normalizeText(manufacturer.canonical_name), createdAt: manufacturer.createdAt || manufacturer.created_at || now, updatedAt: now });
+      importedManufacturers.add(manufacturer.id);
+    }
+  });
+
+  models.forEach(model => {
+    if (!importedModels.has(model.id)) {
+      db.grinder_models.push({ ...model, normalized_canonical_name: model.normalized_canonical_name || normalizeText(model.canonical_name), normalized_display_name: model.normalized_display_name || normalizeText(model.display_name), createdAt: model.createdAt || model.created_at || now, updatedAt: now });
+      importedModels.add(model.id);
+    }
+  });
+
+  aliases.forEach(alias => {
+    const key = `${alias.entity_type}:${alias.entity_id}:${alias.normalized_alias_text || normalizeText(alias.alias_text)}`;
+    if (!importedAliases.has(key)) {
+      db.grinder_aliases.push({ id: alias.id || randomUUID(), ...alias, normalized_alias_text: alias.normalized_alias_text || normalizeText(alias.alias_text), createdAt: alias.createdAt || alias.created_at || now, updatedAt: now });
+      importedAliases.add(key);
+    }
+  });
+
+  db.seed_imports.push({
+    id: randomUUID(),
+    seed_name: seed.database_name || meta.sourceFile || 'grinder-equipment-seed',
+    schema_version: seed.version || '',
+    sourceFile: meta.sourceFile || '',
+    importedAt: now,
+    counts: {
+      grinder_manufacturers: manufacturers.length,
+      grinder_models: models.length,
+      grinder_aliases: aliases.length,
     },
   });
   return db;
@@ -288,6 +347,98 @@ function updateSuggestionStatus(db, suggestionId, status, resolution = {}) {
   return suggestion;
 }
 
+function grinderManufacturerById(db, id) {
+  return db.grinder_manufacturers.find(m => m.id === id);
+}
+
+function grinderModelById(db, id) {
+  return db.grinder_models.find(m => m.id === id);
+}
+
+function grinderSearchRows(db) {
+  const rows = [];
+  db.grinder_manufacturers.forEach(manufacturer => {
+    rows.push({ type: 'manufacturer', id: manufacturer.id, manufacturerId: manufacturer.id, manufacturerName: manufacturer.canonical_name, label: manufacturer.canonical_name, normalized: manufacturer.normalized_canonical_name || normalizeText(manufacturer.canonical_name), source: 'canonical_name', manufacturer });
+  });
+  db.grinder_models.forEach(model => {
+    const manufacturer = grinderManufacturerById(db, model.manufacturer_id);
+    rows.push({ type: 'grinder_model', id: model.id, modelId: model.id, manufacturerId: model.manufacturer_id, manufacturerName: manufacturer?.canonical_name || model.manufacturer_name || model.manufacturer_id, modelName: model.canonical_name, label: model.display_name || [manufacturer?.canonical_name || model.manufacturer_name, model.canonical_name].filter(Boolean).join(' '), normalized: normalizeText([model.canonical_name, model.display_name].filter(Boolean).join(' ')), source: 'canonical_name/display_name', model, manufacturer });
+  });
+  db.grinder_aliases.forEach(alias => {
+    const model = alias.entity_type === 'grinder_model' ? grinderModelById(db, alias.entity_id) : null;
+    const manufacturer = alias.entity_type === 'manufacturer' ? grinderManufacturerById(db, alias.entity_id) : grinderManufacturerById(db, model?.manufacturer_id);
+    rows.push({ type: alias.entity_type, id: alias.entity_id, aliasId: alias.id, modelId: model?.id, manufacturerId: manufacturer?.id, manufacturerName: manufacturer?.canonical_name, modelName: model?.canonical_name, label: alias.alias_text, normalized: alias.normalized_alias_text || normalizeText(alias.alias_text), source: 'alias', alias, model, manufacturer });
+  });
+  return rows;
+}
+
+function autocompleteGrinderManufacturers(db, query, limit = 4) {
+  const q = normalizeText(query);
+  if (q.length < 2) return [];
+  const rows = grinderSearchRows(db).filter(row => row.type === 'manufacturer');
+  return scoreRows(rows, q).slice(0, limit);
+}
+
+function autocompleteGrinderModels(db, query, manufacturerId, limit = 4) {
+  const q = normalizeText(query);
+  if (q.length < 1) return [];
+  const rows = grinderSearchRows(db).filter(row => (row.type === 'grinder_model' || row.type === 'manufacturer') && row.modelId && (!manufacturerId || row.manufacturerId === manufacturerId));
+  return scoreRows(rows, q).slice(0, limit);
+}
+
+function scoreRows(rows, q) {
+  return rows.map(row => {
+    const fields = [row.label, row.normalized, row.manufacturerName, row.modelName, row.model?.display_name].map(normalizeText);
+    let score = 0;
+    fields.forEach(field => {
+      if (!field) return;
+      if (field === q) score = Math.max(score, 100);
+      else if (field.startsWith(q)) score = Math.max(score, 80);
+      else if (field.includes(q)) score = Math.max(score, 50);
+    });
+    return { ...row, score };
+  }).filter(row => row.score > 0).sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
+}
+
+function resolveGrinder(db, input) {
+  const manufacturerText = input.manufacturer || input.raw_manufacturer_input || '';
+  const modelText = input.model || input.raw_model_input || '';
+  const manufacturerMatch = scoreRows(grinderSearchRows(db).filter(row => row.type === 'manufacturer'), normalizeText(manufacturerText))[0];
+  const manufacturerId = input.manufacturer_id || (manufacturerMatch?.score >= 100 ? manufacturerMatch.manufacturerId : '');
+  const modelRows = grinderSearchRows(db).filter(row => row.modelId && (!manufacturerId || row.manufacturerId === manufacturerId));
+  const modelMatch = scoreRows(modelRows, normalizeText(modelText))[0];
+  if (manufacturerId && modelMatch?.score >= 100) return { matched: true, manufacturer: grinderManufacturerById(db, manufacturerId), model: grinderModelById(db, modelMatch.modelId) };
+  return { matched: false, manufacturer: manufacturerId ? grinderManufacturerById(db, manufacturerId) : null, model: null };
+}
+
+function createGrinderSuggestion(db, input, resolution = {}) {
+  const now = new Date().toISOString();
+  const suggestion = {
+    id: randomUUID(),
+    manufacturer_id: input.manufacturer_id || resolution.manufacturer?.id || '',
+    raw_manufacturer_input: input.manufacturer || input.raw_manufacturer_input || '',
+    raw_model_input: input.model || input.raw_model_input || '',
+    display_name: input.display_name || [input.manufacturer || input.raw_manufacturer_input, input.model || input.raw_model_input].filter(Boolean).join(' '),
+    normalized_text: normalizeText([input.manufacturer || input.raw_manufacturer_input, input.model || input.raw_model_input, input.display_name].filter(Boolean).join(' ')),
+    status: 'pending',
+    userId: input.userId || '',
+    createdAt: now,
+    updatedAt: now,
+    notes: input.notes || '',
+  };
+  db.grinder_user_suggested_entries.unshift(suggestion);
+  return suggestion;
+}
+
+function addGrinderAlias(db, entityType, entityId, aliasText, source = 'admin') {
+  const normalized = normalizeText(aliasText);
+  const exists = db.grinder_aliases.find(a => a.entity_type === entityType && a.entity_id === entityId && (a.normalized_alias_text || normalizeText(a.alias_text)) === normalized);
+  if (exists) return exists;
+  const alias = { id: randomUUID(), entity_type: entityType, entity_id: entityId, alias_text: aliasText, normalized_alias_text: normalized, source, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  db.grinder_aliases.unshift(alias);
+  return alias;
+}
+
 function publicRecipe(recipe) {
   return recipe && recipe.visibility === 'public' && recipe.id && recipe.ownerId;
 }
@@ -361,7 +512,99 @@ async function handleApi(req, res, url) {
   const db = readDb();
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return send(res, 200, { ok: true, recipes: db.recipes.length, users: db.users.length, follows: db.follows.length, ratings: db.ratings.length, events: db.events.length, manufacturers: db.manufacturers.length, machine_models: db.machine_models.length, aliases: db.aliases.length, user_suggested_entries: db.user_suggested_entries.length });
+    return send(res, 200, { ok: true, recipes: db.recipes.length, users: db.users.length, follows: db.follows.length, ratings: db.ratings.length, events: db.events.length, manufacturers: db.manufacturers.length, machine_models: db.machine_models.length, aliases: db.aliases.length, user_suggested_entries: db.user_suggested_entries.length, grinder_manufacturers: db.grinder_manufacturers.length, grinder_models: db.grinder_models.length, grinder_aliases: db.grinder_aliases.length, grinder_user_suggested_entries: db.grinder_user_suggested_entries.length });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/grinders/manufacturers/autocomplete') {
+    const q = url.searchParams.get('q') || '';
+    const limit = Math.min(10, Number(url.searchParams.get('limit') || 4));
+    return send(res, 200, { results: autocompleteGrinderManufacturers(db, q, limit) });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/grinders/models/autocomplete') {
+    const q = url.searchParams.get('q') || '';
+    const manufacturerId = url.searchParams.get('manufacturerId') || '';
+    const limit = Math.min(10, Number(url.searchParams.get('limit') || 4));
+    return send(res, 200, { results: autocompleteGrinderModels(db, q, manufacturerId, limit) });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/grinders/manufacturers') {
+    return send(res, 200, { manufacturers: db.grinder_manufacturers });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/grinders/models') {
+    const manufacturerId = url.searchParams.get('manufacturerId');
+    const models = manufacturerId ? db.grinder_models.filter(model => model.manufacturer_id === manufacturerId) : db.grinder_models;
+    return send(res, 200, { grinder_models: models });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/grinders/resolve') {
+    const body = await readJson(req);
+    const resolved = resolveGrinder(db, body);
+    if (resolved.matched) return send(res, 200, resolved);
+    const suggestion = createGrinderSuggestion(db, body, resolved);
+    writeDb(db);
+    return send(res, 201, { ...resolved, suggestion });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/admin/grinders/suggestions') {
+    const status = url.searchParams.get('status');
+    const suggestions = status ? db.grinder_user_suggested_entries.filter(s => s.status === status) : db.grinder_user_suggested_entries;
+    return send(res, 200, { suggestions });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/grinders/actions') {
+    const body = await readJson(req);
+    const suggestion = db.grinder_user_suggested_entries.find(s => s.id === body.suggestionId);
+    if (!suggestion) return send(res, 404, { error: 'Suggestion not found' });
+    const now = new Date().toISOString();
+    let result = null;
+    if (body.action === 'approve_as_new_manufacturer') {
+      const canonicalName = body.canonical_name || suggestion.raw_manufacturer_input || suggestion.display_name;
+      const manufacturer = { id: body.id || slugify(canonicalName), canonical_name: canonicalName, slug: body.slug || slugify(canonicalName), source_url: body.source_url || '', model_count: 0, hand_grinder_models: 0, electric_models: 0, normalized_canonical_name: normalizeText(canonicalName), source: 'admin', createdAt: now, updatedAt: now };
+      const existing = db.grinder_manufacturers.find(m => m.id === manufacturer.id);
+      if (existing) Object.assign(existing, manufacturer, { createdAt: existing.createdAt || now });
+      else db.grinder_manufacturers.unshift(manufacturer);
+      result = existing || manufacturer;
+      suggestion.status = 'approved';
+      suggestion.resolution = { action: body.action, manufacturerId: result.id };
+    } else if (body.action === 'approve_as_new_model') {
+      const manufacturerName = body.manufacturer || suggestion.raw_manufacturer_input || 'Unknown';
+      const manufacturerId = body.manufacturer_id || suggestion.manufacturer_id || slugify(manufacturerName);
+      if (!db.grinder_manufacturers.find(m => m.id === manufacturerId)) {
+        db.grinder_manufacturers.unshift({ id: manufacturerId, canonical_name: manufacturerName, slug: slugify(manufacturerName), normalized_canonical_name: normalizeText(manufacturerName), source: 'admin', createdAt: now, updatedAt: now });
+      }
+      const canonicalName = body.canonical_name || suggestion.raw_model_input || suggestion.display_name;
+      const model = { id: body.id || `${manufacturerId}__${slugify(canonicalName)}`, manufacturer_id: manufacturerId, manufacturer_name: grinderManufacturerById(db, manufacturerId)?.canonical_name || manufacturerName, canonical_name: canonicalName, display_name: body.display_name || suggestion.display_name || [manufacturerName, canonicalName].filter(Boolean).join(' '), slug: body.slug || slugify(canonicalName), category: body.category || '', burr_or_burr_size: body.burr_or_burr_size || '', power_type: body.power_type || '', primary_use: body.primary_use || '', status: body.status || '', source_url: body.source_url || '', backend_notes: body.notes || suggestion.notes || '', is_hand_grinder: body.is_hand_grinder ?? false, is_electric_grinder: body.is_electric_grinder ?? true, normalized_canonical_name: normalizeText(canonicalName), normalized_display_name: normalizeText(body.display_name || suggestion.display_name || canonicalName), source: 'admin', createdAt: now, updatedAt: now };
+      const existing = db.grinder_models.find(m => m.id === model.id);
+      if (existing) Object.assign(existing, model, { createdAt: existing.createdAt || now });
+      else db.grinder_models.unshift(model);
+      result = existing || model;
+      suggestion.status = 'approved';
+      suggestion.resolution = { action: body.action, manufacturerId, modelId: result.id };
+    } else if (body.action === 'add_as_alias_to_existing_model') {
+      const modelId = body.model_id;
+      if (!grinderModelById(db, modelId)) return send(res, 400, { error: 'model_id is required and must exist' });
+      result = addGrinderAlias(db, 'grinder_model', modelId, body.alias_text || suggestion.display_name || suggestion.raw_model_input, 'admin');
+      suggestion.status = 'approved';
+      suggestion.resolution = { action: body.action, modelId, aliasId: result.id };
+    } else if (body.action === 'merge_with_existing_entry') {
+      const entityType = body.entity_type || 'grinder_model';
+      const entityId = body.entity_id;
+      if (!entityId) return send(res, 400, { error: 'entity_id is required' });
+      result = addGrinderAlias(db, entityType, entityId, body.alias_text || suggestion.display_name || suggestion.raw_model_input || suggestion.raw_manufacturer_input, 'admin-merge');
+      suggestion.status = 'merged';
+      suggestion.resolution = { action: body.action, entityType, entityId, aliasId: result.id };
+    } else if (body.action === 'reject') {
+      suggestion.status = 'rejected';
+      suggestion.resolution = { action: body.action, reason: body.reason || '' };
+      result = suggestion;
+    } else {
+      return send(res, 400, { error: 'Unknown admin action' });
+    }
+    suggestion.updatedAt = now;
+    writeDb(db);
+    return send(res, 200, { suggestion, result });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/equipment/autocomplete') {

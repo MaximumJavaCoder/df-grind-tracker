@@ -36,6 +36,12 @@
     <button onclick="loadSuggestions()">Refresh</button>
     <div id="suggestions"></div>
   </section>
+
+  <section class="card">
+    <h2>Pending Grinder Suggestions</h2>
+    <button onclick="loadGrinderSuggestions()">Refresh</button>
+    <div id="grinderSuggestions"></div>
+  </section>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -65,6 +71,11 @@ async function loadSuggestions() {
   $('#suggestions').innerHTML = data.suggestions.map(renderSuggestion).join('') || '<p class="muted">No pending suggestions.</p>';
 }
 
+async function loadGrinderSuggestions() {
+  const data = await api('/api/admin/grinders/suggestions?status=pending');
+  $('#grinderSuggestions').innerHTML = data.suggestions.map(renderGrinderSuggestion).join('') || '<p class="muted">No pending grinder suggestions.</p>';
+}
+
 function renderSuggestion(s) {
   return `<div class="suggestion" id="s-${s.id}">
     <h3>${escapeHtml(s.display_name || s.text || [s.manufacturer, s.model].filter(Boolean).join(' '))}</h3>
@@ -85,6 +96,27 @@ function renderSuggestion(s) {
   </div>`;
 }
 
+function renderGrinderSuggestion(s) {
+  return `<div class="suggestion" id="gs-${s.id}">
+    <h3>${escapeHtml(s.display_name || [s.raw_manufacturer_input, s.raw_model_input].filter(Boolean).join(' '))}</h3>
+    <p class="muted">ID: <code>${s.id}</code></p>
+    <div class="grid">
+      <label>Manufacturer<input data-field="manufacturer" value="${escapeHtml(s.raw_manufacturer_input || '')}"></label>
+      <label>Model<input data-field="model" value="${escapeHtml(s.raw_model_input || '')}"></label>
+      <label>Display Name<input data-field="display_name" value="${escapeHtml(s.display_name || '')}"></label>
+      <label>Manufacturer ID<input data-field="manufacturer_id" value="${escapeHtml(s.manufacturer_id || '')}"></label>
+      <label>Existing Model ID<input data-field="model_id" placeholder="for alias/merge"></label>
+      <label>Existing Entity ID<input data-field="entity_id" placeholder="for merge"></label>
+      <label>Entity Type<select data-field="entity_type"><option value="grinder_model">grinder_model</option><option value="manufacturer">manufacturer</option></select></label>
+    </div>
+    <button onclick="grinderAction('${s.id}','approve_as_new_manufacturer')">Approve as New Manufacturer</button>
+    <button onclick="grinderAction('${s.id}','approve_as_new_model')">Approve as New Model</button>
+    <button class="secondary" onclick="grinderAction('${s.id}','add_as_alias_to_existing_model')">Add as Alias to Existing Model</button>
+    <button class="secondary" onclick="grinderAction('${s.id}','merge_with_existing_entry')">Merge with Existing Entry</button>
+    <button class="danger" onclick="grinderAction('${s.id}','reject')">Reject</button>
+  </div>`;
+}
+
 async function action(id, action) {
   const root = document.getElementById('s-' + id);
   const body = { suggestionId: id, action };
@@ -99,7 +131,22 @@ async function action(id, action) {
   await loadSuggestions();
 }
 
+async function grinderAction(id, action) {
+  const root = document.getElementById('gs-' + id);
+  const body = { suggestionId: id, action };
+  root.querySelectorAll('[data-field]').forEach(input => body[input.dataset.field] = input.value);
+  body.canonical_name = body.model || body.manufacturer || body.display_name;
+  body.alias_text = body.display_name || body.model || body.manufacturer;
+  await api('/api/admin/grinders/actions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  await loadGrinderSuggestions();
+}
+
 loadSuggestions().catch(err => $('#suggestions').textContent = err.message);
+loadGrinderSuggestions().catch(err => $('#grinderSuggestions').textContent = err.message);
 </script>
 </body>
 </html>
