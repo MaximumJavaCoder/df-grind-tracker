@@ -818,6 +818,35 @@ function convertProfileToRecipe(beanId,m,pid){ensureCommunity(state); let r=reci
 function openRecipeBasisPicker(){let rows=[]; state.beans.forEach(b=>Object.entries(b.brewProfiles||{}).forEach(([m,arr])=>(arr||[]).forEach(p=>rows.push({b,m,p})))); modal(`<h2>Create From Dialed-In Bean</h2><div class="recipe-options">${rows.map(({b,m,p})=>`<button class="recipe-option" onclick="convertProfileToRecipe('${b.id}','${m}','${p.id}')"><b>${esc(b.name)} · ${esc(m)}</b><span>${esc(p.name||'Profile')} · ${p.score||'—'} score</span></button>`).join('')||'<p>No dialed-in profiles yet.</p>'}</div>`)}
 function profileDetail(beanId,m,pid){let b=bean(beanId), p=(b.brewProfiles[m]||[]).find(x=>x.id===pid); modal(`<button class="edit-icon modal-edit" onclick="profileForm('${beanId}','${m}','${pid}')">${icon('pencil')}</button><h2>${esc(p.name)}</h2><div class="hero-detail"><b>${p.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Method</span>${esc(m)}</div><div><span>Grind</span>${p.grind}</div><div><span>Dose</span>${p.dose}g</div><div><span>Output</span>${p.yieldOut||p.water||'—'}g</div><div><span>Temperature</span>${tempVal(p,baseMethod(m))}°</div><div><span>Time</span>${fmt(p.time||p.totalTime)}s</div><div><span>Notes</span>${esc(p.notes||'—')}</div></div><button class="btn full" onclick="brewUsingProfile('${beanId}','${m}','${pid}')">Brew Using This Profile</button><button class="btn secondary full" onclick="convertProfileToRecipe('${beanId}','${m}','${pid}')">Convert to Recipe</button>`)}
 function openBeanDetail(id,modalOpen=true){let b=bean(id); if(!b)return; if(!b.brewProfiles)b.brewProfiles={}; if(!b.brewProfiles[selectedMethod])selectedMethod=Object.keys(b.brewProfiles)[0]||'Espresso'; let p=activeProfile(b,selectedMethod), g=grinder(p?.grinderId||b.grinderId), recent=brewsFor(b.id,selectedMethod).slice(0,3); let html=`<button class="back" onclick="closeModal()">${icon('back')}</button><button class="edit-icon modal-edit" onclick="openBeanForm('${b.id}')">${icon('pencil')}</button><div class="bean-hero"><button class="bag large ${b.photo?'has-photo':''}" onclick="pickPhoto('${b.id}')">${b.photo?`<img src="${b.photo}">`:'DF'}<em>${icon('camera')}</em></button><div><h1>${esc(b.name)}</h1><p>${esc([b.process,b.origin].filter(Boolean).join(' • '))}</p><span class="pill green">${b.status==='current'?'Current Bean':'Archived'}</span></div></div><h3>Brew Profiles</h3>${methodTabs(b,selectedMethod)}${profilePanel(b,selectedMethod,p,g)}<section class="inner-card"><h3>Equipment</h3><div class="equipment">${methodEquipmentCards(selectedMethod,g)}</div></section><section class="inner-card"><h3>Last 3 Brews <button onclick="showBeanHistory('${b.id}','${selectedMethod}')">View All (20)</button></h3><div class="mini-brews">${recent.map(x=>`<button onclick="brewDetail('${x.id}')"><small>${dateShort(x.createdAt)}</small><b>${x.rating||'—'}</b><span>${fmt(x.time||x.totalTime)}s</span></button>`).join('')||'<p>No brews yet.</p>'}</div></section><section class="inner-card"><h3>Saved Profiles (${selectedMethod}) <button onclick="manageProfiles('${b.id}','${selectedMethod}')">Manage</button></h3><div class="saved-profiles">${(b.brewProfiles[selectedMethod]||[]).map(pr=>`<button class="${pr.active?'sel':''}" onclick="profileDetail('${b.id}','${selectedMethod}','${pr.id}')"><b>${esc(pr.name)}</b><small>${dateShort(pr.createdAt)} · ${pr.score||'—'} Score</small></button>`).join('')}<button class="add" onclick="profileForm('${b.id}','${selectedMethod}')">+<small>Add New</small></button></div></section>`; if(modalOpen)modal(html); else {$('.modal').innerHTML=`<div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}`;bind();}}
+function equipmentChevron(){return `<svg class="equipment-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>`}
+function grinderBurrSvg(){return `<svg class="equipment-method-icon grinder-burr-icon" viewBox="0 0 64 64"><circle cx="32" cy="32" r="25"/><circle cx="32" cy="32" r="11"/><path d="M32 7v14M32 43v14M7 32h14M43 32h14M14.3 14.3l10 10M39.7 39.7l10 10M49.7 14.3l-10 10M24.3 39.7l-10 10M22.5 9.2l4.8 13M36.7 41.8l4.8 13M54.8 22.5l-13 4.8M22.2 36.7l-13 4.8M41.5 9.2l-4.8 13M27.3 41.8l-4.8 13M54.8 41.5l-13-4.8M22.2 27.3l-13-4.8"/></svg>`}
+function espressoPortafilterSvg(){return `<svg class="equipment-method-icon portafilter-icon" viewBox="0 0 64 64"><path d="M8 25c0-5 8-9 18-9s18 4 18 9-8 9-18 9S8 30 8 25z"/><path d="M11 25c0 3 7 6 15 6s15-3 15-6M18 34v9a7 7 0 0 0 14 0v-9M33 29h13l13 4v8l-25-3M12 28l3 15M41 22h6"/></svg>`}
+function equipmentMethodSvg(method){
+ const bm=baseMethod(method);
+ if(bm==='Espresso')return espressoPortafilterSvg();
+ if(bm==='Other')return brewSvg('Other');
+ return brewSvg(bm);
+}
+function equipmentRow(iconHtml,title,subtitle,onclick=''){
+ return `<button class="equipment-row" type="button" ${onclick?`onclick="${onclick}"`:''}>${iconHtml}<span class="equipment-copy"><b>${esc(title)}</b><small>${esc(subtitle||'Not set')}</small></span>${equipmentChevron()}</button>`;
+}
+function methodEquipmentCards(method,g){
+ const bm=baseMethod(method), m=methodEquipment(bm);
+ const grinderSubtitle=[grinderManufacturer(g),grinderModel(g),g?.burrType==='Other'?g.burrOther:g?.burrType,g?.profile].filter(Boolean).join(' • ');
+ return `<div class="equipment-list">${equipmentRow(grinderBurrSvg(),'Grinder',grinderSubtitle,'editProfile()')}${equipmentRow(equipmentMethodSvg(bm),m.title,m.value,'editProfile()')}</div>`;
+}
+function brewSvg(m){
+ const paths={
+  Espresso:'M18 29h25v8a12.5 12.5 0 0 1-25 0v-8z M43 31h5a4.5 4.5 0 0 1 0 9h-5 M16 47h30 M24 20v5 M31 18v7 M38 20v5 M23 15h16',
+  'Pour Over':'M19 12h26l-5.5 19h-15L19 12z M23.5 20h17 M26 31h12 M22 48h20 M24.5 42h15 M27 31l-4 11h18l-4-11',
+  AeroPress:'M24 12h16v30H24V12z M21 9h22 M26.5 20h11 M26.5 34h11 M19 47h26 M22 42h20 M31 12v30',
+  'French Press':'M22 15h18v31H22V15z M24 10h14 M31 7v17 M19 50h24 M40 23h5v16h-5 M25 36c4 2.5 10 2.5 14 0',
+  'Moka Pot':'M21 25h22l5 25H16l5-25z M24 25l2.5-15h11L40 25 M20 35h24 M45 32h6 M50 33v12 M27 10h10 M29 18h6',
+  More:'M20 32h.1 M32 32h.1 M44 32h.1',
+  Other:'M20 28h22v9a11 11 0 0 1-22 0v-9z M42 31h5a4 4 0 0 1 0 8h-5 M18 48h27 M25 20v4 M32 18v6 M39 20v4'
+ };
+ return `<svg class="brew-icon" viewBox="0 0 64 64" aria-hidden="true"><path d="${paths[m]||paths.Other}"/></svg>`;
+}
 views.recipes=()=>recipesView();
 views.more=()=>moreView();
 ensureCommunity(state);
