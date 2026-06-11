@@ -847,6 +847,21 @@ function brewSvg(m){
  };
  return `<svg class="brew-icon" viewBox="0 0 64 64" aria-hidden="true"><path d="${paths[m]||paths.Other}"/></svg>`;
 }
+function profileMetric(iconName,value,label){return `<div class="profile-metric">${smallIcon(iconName)}<b>${esc(value??'—')}</b><span>${esc(label)}</span></div>`}
+function profilePanel(b,m,p,g){
+ if(!p)return `<section class="profile-main"><h3>${esc(m)} —<br>No Profile</h3><button class="btn full" onclick="profileForm('${b.id}','${m}')">Create ${esc(m)} Profile</button></section>`;
+ const bm=baseMethod(m), isEsp=bm==='Espresso', score=+(p.score||0), c=scoreColor(score), t=tempVal(p,bm);
+ const output=isEsp?(p.yieldOut??'—'):(p.water??'—'), time=isEsp?(p.time?fmt(p.time):'—'):(p.totalTime?fmt(p.totalTime):'—');
+ const metrics=[
+  profileMetric('bean',`${p.dose??'—'}g`,'Dose'),
+  profileMetric(isEsp?'ratio':'water',`${output}${output==='—'?'':'g'}`,isEsp?'Yield':'Water'),
+  profileMetric('time',time,'Time'),
+  profileMetric('temp',`${t}°`,'Temperature'),
+  profileMetric('ratio',p.ratio||ratio(p),'Ratio'),
+  profileMetric('bean',b.roaster||'—','Roaster')
+ ].join('');
+ return `<section class="profile-main"><div class="profile-title"><h3>${esc(m)} —<br>Current Profile</h3><span>Dialed In</span></div><div class="profile-circles"><div class="gauge grind"><b>${p.grind??'—'}</b><small>Grind Setting</small><em>${esc(grinderModel(g)||g.name||'—')}</em></div><div class="score-ring" style="--scoreColor:${c}"><b>${score||'—'}</b><small>Taste Score</small></div></div><div class="profile-metric-grid">${metrics}</div><button class="btn full" onclick="brewUsingProfile('${b.id}','${m}','${p.id}')">Brew Using This Profile</button></section>`;
+}
 views.recipes=()=>recipesView();
 views.more=()=>moreView();
 ensureCommunity(state);
