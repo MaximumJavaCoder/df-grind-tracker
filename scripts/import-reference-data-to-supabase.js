@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,7 +11,12 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const REST_URL = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1`;
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8'));
@@ -24,19 +30,11 @@ async function upsert(table, rows, onConflict, batchSize = 500) {
   if (!rows.length) return;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
-    const response = await fetch(`${REST_URL}/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
-      method: 'POST',
-      headers: {
-        apikey: SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates',
-      },
-      body: JSON.stringify(batch),
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Failed upserting ${table}: ${response.status} ${text}`);
+    const { error } = await supabase
+      .from(table)
+      .upsert(batch, { onConflict });
+    if (error) {
+      throw new Error(`Failed upserting ${table}: ${error.message}`);
     }
     console.log(`Upserted ${Math.min(i + batchSize, rows.length)}/${rows.length} into ${table}`);
   }
