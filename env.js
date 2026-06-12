@@ -1,0 +1,4 @@
+window.BREW_LIBRARY_ENV = window.BREW_LIBRARY_ENV || {
+  VITE_SUPABASE_URL: '',
+  VITE_SUPABASE_ANON_KEY: ''
+};

@@ -835,6 +835,13 @@ async function handleApi(req, res, url) {
 }
 
 function serveStatic(req, res, url) {
+  if (url.pathname === '/env.js') {
+    return send(res, 200, `window.BREW_LIBRARY_ENV = {
+  VITE_SUPABASE_URL: ${JSON.stringify(process.env.VITE_SUPABASE_URL || '')},
+  VITE_SUPABASE_ANON_KEY: ${JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || '')}
+};
+`, 'text/javascript; charset=utf-8');
+  }
   let filePath = path.normalize(decodeURIComponent(url.pathname));
   if (filePath === '/' || filePath === '.') filePath = '/index.html';
   const resolved = path.join(ROOT, filePath);

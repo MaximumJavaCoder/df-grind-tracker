@@ -63,6 +63,24 @@ npm run supabase:import-reference
 
 `SUPABASE_SERVICE_ROLE_KEY` is only for this local import script. Do not add it to app code, Capacitor config, public `.env` files, or any client bundle.
 
+Reference-data autocomplete in the app uses the public anon/publishable key only:
+
+```bash
+export VITE_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
+export VITE_SUPABASE_ANON_KEY="YOUR_ANON_OR_PUBLISHABLE_KEY"
+npm start
+```
+
+For Xcode/Capacitor testing, include those same env vars when syncing:
+
+```bash
+VITE_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co" \
+VITE_SUPABASE_ANON_KEY="YOUR_ANON_OR_PUBLISHABLE_KEY" \
+npm run mobile:sync
+```
+
+The app currently uses Supabase only for read-only reference lookups for grinder and espresso machine autocomplete. If Supabase env vars are missing or a lookup fails, it falls back to the existing local/backend autocomplete.
+
 ## API endpoints
 
 - `GET /api/health`
