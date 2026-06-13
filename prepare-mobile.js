@@ -27,4 +27,13 @@ fs.writeFileSync(path.join(outDir, 'env.js'), `window.BREW_LIBRARY_ENV = {
 };
 `);
 
+const dataDir = path.join(__dirname, 'data');
+const outDataDir = path.join(outDir, 'data');
+if (fs.existsSync(dataDir)) {
+  fs.mkdirSync(outDataDir, { recursive: true });
+  for (const file of ['equipment-seed.json', 'grinder-equipment-seed.json']) {
+    fs.copyFileSync(path.join(dataDir, file), path.join(outDataDir, file));
+  }
+}
+
 console.log(`Prepared ${files.length} files for Capacitor in ${outDir}`);

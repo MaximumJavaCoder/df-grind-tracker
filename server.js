@@ -76,7 +76,7 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   });
-  res.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
+  res.end(type.startsWith('application/json') && !Buffer.isBuffer(body) ? JSON.stringify(body) : body);
 }
 
 function readJson(req) {
