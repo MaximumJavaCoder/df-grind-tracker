@@ -1,0 +1,29 @@
+{
+  "name": "brew-library",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first coffee recipe app for iOS and Android with a lightweight recipe sync API.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check app.js && node --check server.js && node --check supabaseClient.js && node --check env.js",
+    "seed:machines": "node scripts/import-machine-seed.js",
+    "seed:grinders": "node scripts/import-grinder-seed.js",
+    "supabase:import-reference": "node scripts/import-reference-data-to-supabase.js",
+    "mobile:prepare": "node prepare-mobile.js",
+    "mobile:add:ios": "npm run mobile:prepare && npx cap add ios",
+    "mobile:add:android": "npm run mobile:prepare && npx cap add android",
+    "mobile:sync": "npm run mobile:prepare && npx cap sync",
+    "mobile:ios": "npx cap open ios",
+    "mobile:android": "npx cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1"
+  }
+}

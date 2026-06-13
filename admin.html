@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Brew Library Admin</title>
+  <style>
+    body{margin:0;background:#050505;color:#f7f4ee;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif}
+    main{max-width:980px;margin:0 auto;padding:24px}
+    h1,h2{letter-spacing:.04em}
+    input,select,textarea,button{font:inherit}
+    input,select,textarea{width:100%;box-sizing:border-box;background:#171717;color:#f7f4ee;border:1px solid #333;border-radius:10px;padding:10px;margin:5px 0 10px}
+    button{background:#f3efe4;color:#050505;border:0;border-radius:10px;padding:10px 12px;font-weight:800;margin:4px}
+    button.secondary{background:#242424;color:#f7f4ee;border:1px solid #333}
+    button.danger{background:#432020;color:#ffd9d9;border:1px solid #733}
+    .card{background:#111;border:1px solid #303030;border-radius:16px;padding:16px;margin:14px 0}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    .muted{color:#aaa7a1}
+    .suggestion{border-top:1px solid #303030;padding-top:14px;margin-top:14px}
+    code{background:#202020;padding:2px 5px;border-radius:5px}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Brew Library Admin</h1>
+  <p class="muted">Review user-suggested espresso machines. Future equipment edits should happen here instead of editing seed JSON.</p>
+
+  <section class="card">
+    <h2>Autocomplete Test</h2>
+    <input id="search" placeholder="Search manufacturer, model, display name, alias...">
+    <div id="searchResults" class="muted"></div>
+  </section>
+
+  <section class="card">
+    <h2>Pending Suggestions</h2>
+    <button onclick="loadSuggestions()">Refresh</button>
+    <div id="suggestions"></div>
+  </section>
+
+  <section class="card">
+    <h2>Pending Grinder Suggestions</h2>
+    <button onclick="loadGrinderSuggestions()">Refresh</button>
+    <div id="grinderSuggestions"></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+$('#search').addEventListener('input', async e => {
+  const q = e.target.value.trim();
+  if (!q) {
+    $('#searchResults').innerHTML = '';
+    return;
+  }
+  const data = await api('/api/equipment/autocomplete?q=' + encodeURIComponent(q));
+  $('#searchResults').innerHTML = data.results.map(r => `<div><b>${escapeHtml(r.label)}</b> <span class="muted">${escapeHtml(r.type)} · ${escapeHtml(r.source)}</span></div>`).join('') || 'No matches';
+});
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function loadSuggestions() {
+  const data = await api('/api/admin/equipment/suggestions?status=pending');
+  $('#suggestions').innerHTML = data.suggestions.map(renderSuggestion).join('') || '<p class="muted">No pending suggestions.</p>';
+}
+
+async function loadGrinderSuggestions() {
+  const data = await api('/api/admin/grinders/suggestions?status=pending');
+  $('#grinderSuggestions').innerHTML = data.suggestions.map(renderGrinderSuggestion).join('') || '<p class="muted">No pending grinder suggestions.</p>';
+}
+
+function renderSuggestion(s) {
+  return `<div class="suggestion" id="s-${s.id}">
+    <h3>${escapeHtml(s.display_name || s.text || [s.manufacturer, s.model].filter(Boolean).join(' '))}</h3>
+    <p class="muted">ID: <code>${s.id}</code></p>
+    <div class="grid">
+      <label>Manufacturer<input data-field="manufacturer" value="${escapeHtml(s.manufacturer || '')}"></label>
+      <label>Model<input data-field="model" value="${escapeHtml(s.model || '')}"></label>
+      <label>Display Name<input data-field="display_name" value="${escapeHtml(s.display_name || '')}"></label>
+      <label>Existing Model ID<input data-field="model_id" placeholder="for alias/merge"></label>
+      <label>Existing Entity ID<input data-field="entity_id" placeholder="for merge"></label>
+      <label>Entity Type<select data-field="entity_type"><option value="machine_model">machine_model</option><option value="manufacturer">manufacturer</option></select></label>
+    </div>
+    <button onclick="action('${s.id}','approve_as_new_manufacturer')">Approve as New Manufacturer</button>
+    <button onclick="action('${s.id}','approve_as_new_model')">Approve as New Model</button>
+    <button class="secondary" onclick="action('${s.id}','add_as_alias_to_existing_model')">Add as Alias to Existing Model</button>
+    <button class="secondary" onclick="action('${s.id}','merge_with_existing_entry')">Merge with Existing Entry</button>
+    <button class="danger" onclick="action('${s.id}','reject')">Reject</button>
+  </div>`;
+}
+
+function renderGrinderSuggestion(s) {
+  return `<div class="suggestion" id="gs-${s.id}">
+    <h3>${escapeHtml(s.display_name || [s.raw_manufacturer_input, s.raw_model_input].filter(Boolean).join(' '))}</h3>
+    <p class="muted">ID: <code>${s.id}</code></p>
+    <div class="grid">
+      <label>Manufacturer<input data-field="manufacturer" value="${escapeHtml(s.raw_manufacturer_input || '')}"></label>
+      <label>Model<input data-field="model" value="${escapeHtml(s.raw_model_input || '')}"></label>
+      <label>Display Name<input data-field="display_name" value="${escapeHtml(s.display_name || '')}"></label>
+      <label>Manufacturer ID<input data-field="manufacturer_id" value="${escapeHtml(s.manufacturer_id || '')}"></label>
+      <label>Existing Model ID<input data-field="model_id" placeholder="for alias/merge"></label>
+      <label>Existing Entity ID<input data-field="entity_id" placeholder="for merge"></label>
+      <label>Entity Type<select data-field="entity_type"><option value="grinder_model">grinder_model</option><option value="manufacturer">manufacturer</option></select></label>
+    </div>
+    <button onclick="grinderAction('${s.id}','approve_as_new_manufacturer')">Approve as New Manufacturer</button>
+    <button onclick="grinderAction('${s.id}','approve_as_new_model')">Approve as New Model</button>
+    <button class="secondary" onclick="grinderAction('${s.id}','add_as_alias_to_existing_model')">Add as Alias to Existing Model</button>
+    <button class="secondary" onclick="grinderAction('${s.id}','merge_with_existing_entry')">Merge with Existing Entry</button>
+    <button class="danger" onclick="grinderAction('${s.id}','reject')">Reject</button>
+  </div>`;
+}
+
+async function action(id, action) {
+  const root = document.getElementById('s-' + id);
+  const body = { suggestionId: id, action };
+  root.querySelectorAll('[data-field]').forEach(input => body[input.dataset.field] = input.value);
+  body.canonical_name = body.model || body.manufacturer || body.display_name;
+  body.alias_text = body.display_name || body.model || body.manufacturer;
+  await api('/api/admin/equipment/actions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  await loadSuggestions();
+}
+
+async function grinderAction(id, action) {
+  const root = document.getElementById('gs-' + id);
+  const body = { suggestionId: id, action };
+  root.querySelectorAll('[data-field]').forEach(input => body[input.dataset.field] = input.value);
+  body.canonical_name = body.model || body.manufacturer || body.display_name;
+  body.alias_text = body.display_name || body.model || body.manufacturer;
+  await api('/api/admin/grinders/actions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  await loadGrinderSuggestions();
+}
+
+loadSuggestions().catch(err => $('#suggestions').textContent = err.message);
+loadGrinderSuggestions().catch(err => $('#grinderSuggestions').textContent = err.message);
+</script>
+</body>
+</html>

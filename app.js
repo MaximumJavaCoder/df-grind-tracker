@@ -1,11 +1,12 @@
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random());
-const KEY='dfDialV13'; let view='home', beanTab='current', maintTab='grinder', selectedMethod='Espresso'; let pourStage='idle', pourBloom=0;
+const KEY='dfDialV13'; let view='home', beanTab='current', maintTab='grinder', selectedMethod='Espresso', recipeTab='library', recipeQuery='', recipeMethod='All', recipeRoast='All', recipeMatchPrefs=true; let pourStage='idle', pourBloom=0;
 const iso=()=>new Date().toISOString(), today=()=>new Date().toISOString().slice(0,10);
 const brewMethods=['Espresso','Pour Over','AeroPress','French Press','Moka Pot','Other'];
+const flavourTags=['Chocolate','Fruity','Floral','Sweet','Funky'];
 const models=['DF54','DF64','DF64V','DF83','DF83V'];
 let timer={running:false,start:0,elapsed:0,int:null};
-const h=(ms=12)=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
+const h=(ms=12)=>{try{if(typeof state!=='undefined'&&state.settings?.haptics===false)return;navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
 const esc=(s='')=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function seed(){let g=uid(), b1=uid(), b2=uid(), p1=uid(), p2=uid(), p3=uid(), now=iso(); return {
  currentBeanId:b1,
@@ -16,10 +17,10 @@ function seed(){let g=uid(), b1=uid(), b2=uid(), p1=uid(), p2=uid(), p3=uid(), n
  ],
  brews:[{id:uid(),beanId:b1,method:'Espresso',profileId:p1,grinderId:g,grind:18.6,dose:18,yieldOut:36.2,time:29.4,rating:8.2,flavours:['Chocolate','Sweet'],notes:'Balanced and sweet.',createdAt:now},{id:uid(),beanId:b1,method:'Pour Over',profileId:p3,grinderId:g,grind:42,dose:20,water:320,totalTime:195,bloom:45,rating:8.6,flavours:['Sweet'],notes:'Good clarity.',createdAt:now},{id:uid(),beanId:b2,method:'Espresso',grinderId:g,grind:17.8,dose:18,yieldOut:38,time:31,rating:8.0,flavours:['Floral'],notes:'Bright.',createdAt:now}],
  maintenance:[{id:uid(),group:'grinder',name:'Grinder deep clean',item:'DF grinder',intervalDays:45,lastDone:today()},{id:uid(),group:'grinder',name:'Chute cleaning',item:'DF grinder',intervalDays:7,lastDone:today()},{id:uid(),group:'espresso',name:'Backflushing',item:'Espresso machine',intervalDays:7,lastDone:today()}],
- settings:{rateReminder:true,rateDelay:7}
+ settings:{rateReminder:true,rateDelay:7,haptics:true}
 }}
-function migrate(o){let f=seed(); if(!o)return f; o.userProfile=o.userProfile||o.profile||f.userProfile; o.settings=o.settings||f.settings; o.maintenance=o.maintenance||f.maintenance; o.beans=(o.beans||f.beans).map(b=>({...b,status:b.status==='archived'?'archived':'current',photo:b.photo||'',brewProfiles:b.brewProfiles||{Espresso:[]}})); o.brews=o.brews||o.shots||f.brews; o.currentBeanId=o.currentBeanId||o.beans[0]?.id; ['Grinder deep clean','Chute cleaning','Backflushing'].forEach((n,i)=>{if(!o.maintenance.some(m=>m.name===n))o.maintenance.push(f.maintenance[i])}); return o}
-function load(){try{let s=localStorage.getItem(KEY)||localStorage.getItem('dfDialV9')||localStorage.getItem('dfDialV8'); if(s)return migrate(JSON.parse(s))}catch(e){} return seed()} let state=load();
+function migrate(o){let f=seed(); if(!o)return ensureCommunity(f); o.userProfile=o.userProfile||o.profile||f.userProfile; o.settings={...f.settings,...(o.settings||{})}; o.maintenance=o.maintenance||f.maintenance; o.beans=(o.beans||f.beans).map(b=>({...b,status:b.status==='archived'?'archived':'current',photo:b.photo||'',brewProfiles:b.brewProfiles||{Espresso:[]}})); o.brews=o.brews||o.shots||f.brews; o.currentBeanId=o.currentBeanId||o.beans[0]?.id; ['Grinder deep clean','Chute cleaning','Backflushing'].forEach((n,i)=>{if(!o.maintenance.some(m=>m.name===n))o.maintenance.push(f.maintenance[i])}); return ensureCommunity(o)}
+function load(){try{let s=localStorage.getItem(KEY)||localStorage.getItem('dfDialV9')||localStorage.getItem('dfDialV8'); if(s)return migrate(JSON.parse(s))}catch(e){} return ensureCommunity(seed())} let state=ensureCommunity(load());
 function save(){localStorage.setItem(KEY,JSON.stringify(state))}
 const bean=id=>state.beans.find(b=>b.id===id), currentBean=()=>bean(state.currentBeanId)||state.beans.find(b=>b.status==='current')||state.beans[0];
 const grinder=id=>(state.userProfile.grinders||[]).find(g=>g.id===id)||state.userProfile.grinders?.[0]||{};
@@ -30,7 +31,7 @@ function fmt(sec){sec=+(sec||0); if(sec<60)return sec.toFixed(1).padStart(4,'0')
 function dateShort(s){return new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric'})}
 function toast(m){let t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',1800)}
 function dueInfo(){let x=null; state.maintenance.forEach(m=>{let d=new Date(m.lastDone); d.setDate(d.getDate()+Number(m.intervalDays)); if(!x||d<x.date)x={m,date:d}}); return {x,days:x?Math.ceil((x.date-new Date())/86400000):0}}
-function logo(){return `<div class="hero"><img src="dfgrinderslogo.png" class="wordmark"></div>`}
+function logo(){return `<div class="hero"><img src="brew-library-logo.svg" class="wordmark" alt="Brew Library"></div>`}
 function icon(name){const path={home:'M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3z',beans:'M15.6 3.2c3.2 1.2 4.7 5.8 3.3 10.2s-5.1 7-8.3 5.8S5.9 13.4 7.3 9 12.4 2 15.6 3.2Z M8.2 18.5c2.4-2.5 4.1-5.3 5.2-8.5.7-2.1 1.1-4.1 1.2-6',shot:'M6 8h12v5.5a6 6 0 0 1-12 0z M18 10h2.2a2.3 2.3 0 0 1 0 4.6H18 M8 20h8 M10 4h4',maint:'M14.8 6.1a4.5 4.5 0 0 0-5.4 5.4l-5.9 5.9 3.1 3.1 5.9-5.9a4.5 4.5 0 0 0 5.4-5.4l-3 3-2.1-2.1z',more:'M4 7h16 M4 12h16 M4 17h16',pencil:'M4 20h4l11-11-4-4L4 16z M13 6l4 4',back:'M15 18l-6-6 6-6',camera:'M4 8h3l1.5-2h7L17 8h3v11H4z M12 11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'}[name]; return `<svg viewBox="0 0 24 24"><path d="${path}"/></svg>`}
 function brewSvg(m){
  const paths={
@@ -106,7 +107,7 @@ function saveProfile(){let g=state.userProfile.grinders[0]||{id:uid()}; Object.a
 function editBrew(id){let x=state.brews.find(b=>b.id===id); if(!x)return; closeModal(); selectedMethod=x.method; view='log'; render(); setTimeout(()=>{$('#logBean').value=x.beanId; $('#grind').value=x.grind; syncRuler(+x.grind); $('#dose').value=x.dose; if(x.method==='Espresso')$('#yieldOut').value=x.yieldOut; else $('#water').value=x.water; $('#notes').value=x.notes||''; $('#rating').value=x.rating||7.5; updateRating(x.rating||7.5)},20)}
 function modal(html){document.body.insertAdjacentHTML('beforeend',`<div id="modal" class="modal-bg"><div class="modal"><div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}</div></div>`); bind()}
 function closeModal(){$('#modal')?.remove()} function filterBeans(q){q=q.toLowerCase(); let arch=beanTab==='archive'; $('#beanList').innerHTML=state.beans.filter(b=>(arch?b.status==='archived':b.status==='current')&&[b.name,b.roaster,b.origin,b.process].join(' ').toLowerCase().includes(q)).map(beanCard).join('')||'<p>No matches.</p>'}
-function exportData(){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='df-dial-backup.json';a.click()}
+function exportData(){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='brew-library-backup.json';a.click()}
 function toggleTimer(method='Espresso'){h(18); if(method==='Pour Over')return togglePourTimer(); if(timer.running){stopTimer(true);return} timer.running=true; timer.start=Date.now()-timer.elapsed; $('#timerCircle')?.classList.add('running'); $('#timeLabel').textContent='TAP TO STOP'; timer.int=setInterval(()=>{timer.elapsed=Date.now()-timer.start; let t=$('#timeText'); if(t)t.textContent=fmt(timer.elapsed/1000)},80)}
 function togglePourTimer(){h(18); if(pourStage==='idle'){pourStage='bloom'; timer.running=true; timer.start=Date.now(); timer.elapsed=0; $('#timerCircle')?.classList.add('running'); $('#timeLabel').textContent='TAP WHEN BLOOM ENDS'; timer.int=setInterval(()=>{timer.elapsed=Date.now()-timer.start; $('#timeText').textContent=fmt(timer.elapsed/1000)},80); return} if(pourStage==='bloom'){pourBloom=timer.elapsed/1000; let b=$('#bloom'); if(b)b.value=Math.round(pourBloom); pourStage='brew'; $('#timeLabel').textContent='TAP WHEN BREW COMPLETE'; return} if(pourStage==='brew'){stopTimer(true); let mt=$('#manualTime'); if(mt)mt.value=(timer.elapsed/1000).toFixed(1); pourStage='done'; $('#timeLabel').textContent='BREW COMPLETE'}}
 function resetTimer(){stopTimer(false); pourStage='idle'; pourBloom=0; if($('#timeLabel'))$('#timeLabel').textContent='TAP TO START'}
@@ -186,7 +187,7 @@ function saveRecipeProfile(beanId,m,pid){let b=bean(beanId), arr=b.brewProfiles[
 function profileDetail(beanId,m,pid){let b=bean(beanId), p=(b.brewProfiles[m]||[]).find(x=>x.id===pid); modal(`<button class="edit-icon modal-edit" onclick="profileForm('${beanId}','${m}','${pid}')">${icon('pencil')}</button><h2>${esc(p.name)}</h2><div class="hero-detail"><b>${p.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Method</span>${m}</div><div><span>Grind</span>${p.grind}</div><div><span>Dose</span>${p.dose}g</div><div><span>Output</span>${p.yieldOut||p.water||'—'}g</div><div><span>Temperature</span>${tempVal(p,m)}°</div><div><span>Time</span>${fmt(p.time||p.totalTime)}s</div><div><span>Notes</span>${esc(p.notes||'—')}</div></div><button class="btn full" onclick="brewUsingProfile('${beanId}','${m}','${pid}')">Brew Using This Profile</button>`)}
 function brewUsingProfile(beanId,method,pid){closeModal(); selectedMethod=method; view='log'; setTimeout(()=>{render(); let p=(bean(beanId).brewProfiles[method]||[]).find(x=>x.id===pid); if(p){$('#logBean').value=beanId; $('#grind').value=(+p.grind).toFixed(1); syncRuler(+p.grind); $('#dose').value=p.dose||''; if(method==='Espresso')$('#yieldOut').value=p.yieldOut||''; else $('#water').value=p.water||''; if($('#temp'))$('#temp').value=tempVal(p,method);}},0)}
 function togglePourTimer(){h(18); if(pourStage==='idle'){pourStage='bloom'; timer.running=true; timer.start=Date.now(); timer.elapsed=0; $('#timerCircle')?.classList.add('running'); $('#timeLabel').textContent='TAP WHEN BLOOM ENDS'; timer.int=setInterval(()=>{timer.elapsed=Date.now()-timer.start; $('#timeText').textContent=fmt(timer.elapsed/1000)},80); return} if(pourStage==='bloom'){pourBloom=timer.elapsed/1000; let b=$('#bloom'); if(b)b.value=Math.round(pourBloom); pourStage='pour1'; $('#timeLabel').textContent='TAP FOR NEXT POUR'; return} if(pourStage.startsWith('pour')){let n=+(pourStage.replace('pour','')||1); pourStage='pour'+(n+1); $('#timeLabel').textContent='DOUBLE TAP TO STOP'; return}}
-if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js'); render();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 
 /* v14 safety overrides */
 function closeModal(){document.querySelectorAll('#modal,.modal-bg').forEach(m=>m.remove())}
@@ -203,3 +204,861 @@ function timerBlock(m='Espresso'){
  let label=m==='Pour Over'?'TAP TO START BLOOM':'TAP TO START';
  return `<div class="timer" id="timerCircle" onclick="toggleTimer('${m}')" ondblclick="stopTimer(true);pourStage='done';let mt=document.getElementById('manualTime');if(mt)mt.value=(timer.elapsed/1000).toFixed(1);let tl=document.getElementById('timeLabel');if(tl)tl.textContent='BREW COMPLETE'"><div class="timer-inner"><div><div class="timer-time" id="timeText">00.0</div><div class="timer-label" id="timeLabel">${label}</div></div></div></div><button class="reset-timer" onclick="event.stopPropagation();resetTimer()">↺ Reset</button>`
 }
+
+/* v15 community recipe library and backend sync foundation */
+function navRecipeIcon(){return `<svg viewBox="0 0 24 24"><path d="M5 5.5h10.5a2.5 2.5 0 0 1 2.5 2.5v11H7.5A2.5 2.5 0 0 1 5 16.5v-11z M8 8.5h7 M8 12h7 M8 15.5h4 M18 8h1.5a1.5 1.5 0 0 1 1.5 1.5V19"/></svg>`}
+function nav(){return `<nav class="nav"><button class="${view==='home'?'active':''}" onclick="go('home')">${icon('home')}</button><button class="${view==='beans'?'active':''}" onclick="go('beans')">${icon('beans')}</button><button class="plus" onclick="go('log')">+</button><button class="${view==='recipes'?'active':''}" onclick="go('recipes')">${navRecipeIcon()}</button><button class="${view==='more'||view==='maintenance'?'active':''}" onclick="go('more')">${icon('more')}</button></nav>`}
+function defaultCommunityUser(){return {id:'local-'+uid(),displayName:'Home Barista',handle:'home-barista',email:'',bio:'Building a recipe collection with Brew Library',location:{city:'',region:'',country:''},equipment:{machine:'',grinders:[]}}}
+function demoCommunityRecipes(){return [
+ {id:'demo-luna-espresso',ownerId:'demo-ana',ownerName:'Ana Park',ownerHandle:'ana-brews',method:'Espresso',title:'Sweet washed Ethiopia flat 9 bar',visibility:'public',beanName:'Ethiopia Chelbesa',roaster:'Konga',origin:'Ethiopia',process:'Washed',roastLevel:'Light',params:{grind:17.4,dose:18,yieldOut:40,time:31,temp:93,ratio:'1:2.2'},tags:['Fruity','Floral','Sweet','Light'],score:8.9,notes:'Longer ratio keeps the florals open without turning thin.',saves:18,createdAt:'2026-05-20T12:00:00.000Z',updatedAt:'2026-05-20T12:00:00.000Z'},
+ {id:'demo-matteo-pourover',ownerId:'demo-matteo',ownerName:'Matteo Silva',ownerHandle:'matteo-cups',method:'Pour Over',title:'Chocolate-forward Brazil V60',visibility:'public',beanName:'Brazil Sitio Bonilha',roaster:'Archive Coffee',origin:'Brazil',process:'Natural',roastLevel:'Medium',params:{grind:43,dose:20,water:320,totalTime:205,bloom:45,temp:96,stages:[{name:'Bloom',time:45,weight:60},{name:'Pour 1',time:85,weight:160},{name:'Pour 2',time:135,weight:240},{name:'Final',time:175,weight:320}]},tags:['Chocolate','Sweet','Medium'],score:8.6,notes:'Slow final drawdown brings out body and sweetness.',saves:11,createdAt:'2026-05-22T12:00:00.000Z',updatedAt:'2026-05-22T12:00:00.000Z'},
+ {id:'demo-nia-aeropress',ownerId:'demo-nia',ownerName:'Nia Chen',ownerHandle:'nia-recipes',method:'AeroPress',title:'Funky anaerobic inverted cup',visibility:'public',beanName:'Colombia El Paraiso',roaster:'Pilot',origin:'Colombia',process:'Anaerobic',roastLevel:'Light',params:{grind:36,dose:16,water:240,totalTime:150,temp:90},tags:['Fruity','Funky','Sweet','Light'],score:8.4,notes:'Lower temp reins in ferment while keeping tropical fruit.',saves:7,createdAt:'2026-05-24T12:00:00.000Z',updatedAt:'2026-05-24T12:00:00.000Z'}
+]}
+function ensureCommunity(o){
+ o=o||{}; let c=o.community||{};
+ c.user={...defaultCommunityUser(),...(c.user||{})};
+ c.user.handle=(c.user.handle||c.user.displayName||'home-barista').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'home-barista';
+ if(!Array.isArray(c.recipes))c.recipes=[];
+ if(!Array.isArray(c.savedRecipeIds))c.savedRecipeIds=['demo-luna-espresso'];
+ if(!Array.isArray(c.follows))c.follows=['demo-ana'];
+ if(!Array.isArray(c.ratings))c.ratings=[];
+ if(!Array.isArray(c.events))c.events=[];
+ c.session={signedIn:false,provider:'local',providerUserId:'',sessionId:'',email:'',...(c.session||{})};
+ c.sync={apiBase:'',enabled:false,lastSyncAt:'',lastError:'',...(c.sync||{})};
+ c.user.location={city:'',region:'',country:'',...(c.user.location||{})};
+ c.user.equipment=profileEquipment(o);
+ o.community=c;
+ const existing=new Map(c.recipes.map(r=>[r.id,r]));
+ const profileRecipes=recipesFromProfiles(o,c).map(r=>{
+  const old=existing.get(r.id)||{};
+  return {...old,...r,visibility:old.visibility||r.visibility,saves:old.saves??r.saves,createdAt:old.createdAt||r.createdAt,updatedAt:old.updatedAt||r.updatedAt}
+ });
+ const profileIds=new Set(profileRecipes.map(r=>r.id));
+ const demos=demoCommunityRecipes().map(r=>({...r,...(existing.get(r.id)||{})}));
+ const demoIds=new Set(demos.map(r=>r.id));
+ const remaining=c.recipes.filter(r=>!profileIds.has(r.id)&&!demoIds.has(r.id));
+ c.recipes=[...profileRecipes,...remaining,...demos];
+ return o;
+}
+function recipesFromProfiles(o,c){let out=[]; (o.beans||[]).forEach(b=>Object.entries(b.brewProfiles||{}).forEach(([m,arr])=>(arr||[]).forEach(p=>out.push(profileToRecipe(b,m,p,c))))); return out}
+function profileRecipeId(b,m,p){return ['profile',b.id,m,p.id].join('-').replace(/[^a-zA-Z0-9_-]/g,'-')}
+function profileToRecipe(b,m,p,c){
+ const isEsp=m==='Espresso', params={grind:p.grind,dose:p.dose,temp:tempVal(p,m)};
+ if(isEsp)Object.assign(params,{yieldOut:p.yieldOut,time:p.time,ratio:p.ratio||ratio(p)}); else Object.assign(params,{water:p.water,totalTime:p.totalTime,bloom:p.bloom,stages:p.stages||[]});
+ const tags=recipeTags(b,p,m);
+ return {id:profileRecipeId(b,m,p),ownerId:c.user.id,ownerName:c.user.displayName,ownerHandle:c.user.handle,method:m,title:p.name&&p.name!=='Current'?p.name:`${b.name} ${m}`,visibility:'private',sourceBeanId:b.id,sourceProfileId:p.id,beanName:b.name,roaster:b.roaster,origin:b.origin,process:b.process,roastLevel:b.roastLevel,params,tags,score:+(p.score||0),notes:p.notes||'',saves:0,createdAt:p.createdAt||iso(),updatedAt:p.updatedAt||p.createdAt||iso()}
+}
+function recipeTags(b,p,m){let text=[b.name,b.roaster,b.origin,b.process,b.roastLevel,p.notes,m].join(' ').toLowerCase(); let tags=[m,b.roastLevel].filter(Boolean); flavourTags.forEach(t=>{if(text.includes(t.toLowerCase()))tags.push(t)}); return [...new Set(tags)]}
+function recipeById(id){ensureCommunity(state); return state.community.recipes.find(r=>r.id===id)}
+function apiBase(){return (state.community?.sync?.apiBase||'').trim().replace(/\/+$/,'')}
+function profileEquipment(sourceState=state){
+ const p=sourceState?.userProfile||{}, machine=p.machine||{}, grinders=p.grinders||[];
+ return {
+  machine:[machine.manufacturer,machine.model].filter(Boolean).join(' '),
+  grinders:grinders.map(g=>({id:g.id,model:g.model,name:g.name,burrType:g.burrType,burrOther:g.burrOther,profile:g.profile}))
+ };
+}
+function publicUser(){
+ ensureCommunity(state);
+ const c=state.community;
+ return {...c.user,equipment:profileEquipment(), signedIn:c.session.signedIn, authProvider:c.session.provider};
+}
+function userFollowObjects(){ensureCommunity(state); return state.community.follows.map(followeeId=>({followerId:state.community.user.id,followeeId}))}
+function communityRating(recipeId){ensureCommunity(state); let arr=state.community.ratings.filter(r=>r.recipeId===recipeId); if(!arr.length)return {avg:0,count:0,mine:null}; let mine=arr.find(r=>r.userId===state.community.user.id); return {avg:Math.round((arr.reduce((s,r)=>s+(+r.rating||0),0)/arr.length)*10)/10,count:arr.length,mine}}
+function recipeDisplayRating(r){let local=communityRating(r.id); return {avg:local.count?local.avg:(r.communityRating||0),count:local.count||r.ratingCount||0,mine:local.mine}}
+async function postJson(path,body){
+ const base=apiBase(); if(!base||!state.community.sync.enabled)return null;
+ const res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!res.ok)throw new Error('Backend request failed');
+ return res.json();
+}
+function trackEvent(type,payload={}){
+ ensureCommunity(state);
+ const event={id:uid(),type,payload,userId:state.community.user.id,createdAt:iso()};
+ state.community.events.unshift(event);
+ state.community.events=state.community.events.slice(0,200);
+ save();
+ sendEvent(event);
+}
+async function sendEvent(event){
+ const base=apiBase(); if(!base||!state.community.sync.enabled)return;
+ try{await fetch(base+'/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(event)})}catch(e){state.community.sync.lastError='Event sync failed'; save()}
+}
+async function syncCommunity(silent=false){
+ ensureCommunity(state);
+ const base=apiBase();
+ if(!base){toast('Add a backend URL in More');return}
+ const mine=state.community.recipes.filter(r=>r.ownerId===state.community.user.id&&r.visibility==='public');
+ try{
+  await fetch(base+'/api/recipes/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:publicUser(),recipes:mine,follows:userFollowObjects(),ratings:state.community.ratings})});
+  const res=await fetch(base+'/api/recipes');
+  if(!res.ok)throw new Error('Recipe sync failed');
+  const remote=await res.json();
+  const merged=new Map(state.community.recipes.map(r=>[r.id,r]));
+  (remote.recipes||[]).forEach(r=>{if(r.ownerId!==state.community.user.id)merged.set(r.id,r)});
+  state.community.recipes=[...merged.values()];
+  const ratingsRes=await fetch(base+'/api/ratings').catch(()=>null);
+  if(ratingsRes?.ok){
+   const data=await ratingsRes.json();
+   const ratings=new Map(state.community.ratings.map(r=>[r.id||`${r.recipeId}:${r.userId}`,r]));
+   (data.ratings||[]).forEach(r=>ratings.set(r.id||`${r.recipeId}:${r.userId}`,r));
+   state.community.ratings=[...ratings.values()];
+  }
+  state.community.sync.lastSyncAt=iso();
+  state.community.sync.lastError='';
+  save();
+  if(!silent){render(); toast('Recipe library synced')}
+ }catch(e){
+  state.community.sync.lastError=e.message||'Sync failed';
+  save();
+  if(!silent)toast(state.community.sync.lastError);
+ }
+}
+function recipesView(){
+ ensureCommunity(state);
+ const c=state.community, count=recipeResults().length;
+ return `<section class="card recipes-head"><h2>Recipes</h2><p>Build your library from dialed-in profiles, save recipes from other users, and rank discovery by your roast and taste preferences.</p><div class="tabs recipe-tabs"><button class="${recipeTab==='library'?'sel':''}" onclick="recipeTab='library';render()">My Library</button><button class="${recipeTab==='discover'?'sel':''}" onclick="recipeTab='discover';render()">Discover</button><button class="${recipeTab==='following'?'sel':''}" onclick="recipeTab='following';render()">Following</button></div><input id="recipeSearch" placeholder="Search recipes, users, beans, or flavors" value="${esc(recipeQuery)}" oninput="recipeQuery=this.value;drawRecipeList()"><div class="filter-row"><select onchange="recipeMethod=this.value;render()"><option ${recipeMethod==='All'?'selected':''}>All</option>${brewMethods.map(m=>`<option ${recipeMethod===m?'selected':''}>${m}</option>`).join('')}</select><select onchange="recipeRoast=this.value;render()"><option ${recipeRoast==='All'?'selected':''}>All</option>${['Light','Medium','Dark'].map(r=>`<option ${recipeRoast===r?'selected':''}>${r}</option>`).join('')}</select></div><button class="btn secondary full ${recipeMatchPrefs?'selected-filter':''}" onclick="recipeMatchPrefs=!recipeMatchPrefs;render()">Taste match ${recipeMatchPrefs?'on':'off'}</button><button class="btn full" onclick="openRecipeForm()">Create Standalone Recipe</button><div class="muted count-line"><span id="recipeCount">${count}</span> recipes shown · @${esc(c.user.handle)}</div></section><section class="card recipe-list-card"><div id="recipeList">${recipeResults().map(recipeCard).join('')||'<p>No matching recipes yet.</p>'}</div></section>`
+}
+function recipeResults(){
+ ensureCommunity(state);
+ const c=state.community, q=recipeQuery.trim().toLowerCase();
+ let list=c.recipes.filter(r=>{
+  const mine=r.ownerId===c.user.id, saved=c.savedRecipeIds.includes(r.id), following=c.follows.includes(r.ownerId);
+  if(recipeTab==='library'&&!(mine||saved))return false;
+  if(recipeTab==='discover'&&(mine||r.visibility!=='public'))return false;
+  if(recipeTab==='following'&&!(following&&r.visibility==='public'))return false;
+  if(recipeMethod!=='All'&&r.method!==recipeMethod)return false;
+  if(recipeRoast!=='All'&&r.roastLevel!==recipeRoast)return false;
+  if(q&&!recipeSearchText(r).includes(q))return false;
+  return true;
+ });
+ if(recipeMatchPrefs)list.sort((a,b)=>recipeMatchScore(b)-recipeMatchScore(a)||new Date(b.updatedAt)-new Date(a.updatedAt));
+ else list.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
+ return list;
+}
+function recipeSearchText(r){return [r.title,r.ownerName,r.ownerHandle,r.method,r.beanName,r.roaster,r.origin,r.process,r.roastLevel,(r.tags||[]).join(' '),r.notes].join(' ').toLowerCase()}
+function preferredRoast(){let v=state.userProfile?.flavour?.roast??50; return v>65?'Light':v<35?'Dark':'Medium'}
+function recipeMatchScore(r){
+ const prefs=state.userProfile?.flavour?.notes||[], tags=r.tags||[];
+ let score=+(r.score||0);
+ prefs.forEach(p=>{if(tags.includes(p))score+=2});
+ if(r.roastLevel===preferredRoast())score+=2.5;
+ if(state.community.follows.includes(r.ownerId))score+=1;
+ if(state.community.savedRecipeIds.includes(r.id))score+=1;
+ return score;
+}
+function drawRecipeList(){let el=$('#recipeList'); if(!el)return; let list=recipeResults(); el.innerHTML=list.map(recipeCard).join('')||'<p>No matching recipes yet.</p>'; let count=$('#recipeCount'); if(count)count.textContent=list.length}
+function recipeParamLine(r){let p=r.params||{}; if(r.method==='Espresso')return `${p.dose||'—'}g in · ${p.yieldOut||'—'}g out · ${fmt(p.time||0)}s · ${p.temp||'—'}°`; return `${p.dose||'—'}g coffee · ${p.water||'—'}g water · ${fmt(p.totalTime||0)} · ${p.temp||'—'}°`}
+function recipeCard(r){
+ const c=state.community, mine=r.ownerId===c.user.id, saved=c.savedRecipeIds.includes(r.id), following=c.follows.includes(r.ownerId);
+ const community=recipeDisplayRating(r);
+ return `<article class="recipe-card click" onclick="recipeDetail('${r.id}')"><div class="recipe-top"><span class="pill">${esc(r.method)}</span><span class="match">${Math.round(recipeMatchScore(r)*10)/10} match</span></div><h3>${esc(r.title)}</h3><p>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · '))}</p><div class="recipe-meta"><b>${r.score||'—'}</b><span>${esc(recipeParamLine(r))}</span></div><div class="recipe-rating-row"><span>Community ${community.count?community.avg:'—'} (${community.count})</span>${community.mine?`<span>Your rating ${community.mine.rating}</span>`:''}</div><div class="tag-row">${(r.tags||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div><div class="recipe-owner"><span>@${esc(r.ownerHandle||'user')}</span><div>${mine?`<button onclick="event.stopPropagation();publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public':'Publish'}</button>`:`<button onclick="event.stopPropagation();saveCommunityRecipe('${r.id}')">${saved?'Saved':'Save'}</button><button onclick="event.stopPropagation();toggleFollow('${r.ownerId}')">${following?'Following':'Follow'}</button><button onclick="event.stopPropagation();openRatingForm('${r.id}')">Rate</button>`}</div></div></article>`
+}
+function saveCommunityRecipe(id){ensureCommunity(state); if(!state.community.savedRecipeIds.includes(id))state.community.savedRecipeIds.push(id); trackEvent('recipe.saved',{recipeId:id}); save(); render(); toast('Recipe saved to library')}
+function publishRecipe(id){let r=recipeById(id); if(!r)return; r.visibility='public'; r.ownerName=state.community.user.displayName; r.ownerHandle=state.community.user.handle; r.updatedAt=iso(); trackEvent('recipe.published',{recipeId:id}); save(); syncCommunity(true); render(); toast('Recipe published')}
+async function toggleFollow(userId){ensureCommunity(state); if(userId===state.community.user.id){toast('This is your profile');return} let f=state.community.follows, i=f.indexOf(userId), following=i<0; if(i>=0)f.splice(i,1); else f.push(userId); trackEvent(following?'user.followed':'user.unfollowed',{userId}); save(); render(); try{await postJson(following?'/api/follows':'/api/unfollow',{followerId:state.community.user.id,followeeId:userId})}catch(e){state.community.sync.lastError='Follow sync failed';save()}}
+function recipeDetail(id){
+ const r=recipeById(id); if(!r)return;
+ const mine=r.ownerId===state.community.user.id, saved=state.community.savedRecipeIds.includes(r.id), following=state.community.follows.includes(r.ownerId);
+ const community=recipeDisplayRating(r);
+ const stages=(r.params?.stages||[]).map(s=>`<div><span>${esc(s.name)}</span>${s.time}s · ${s.weight}g</div>`).join('');
+ const editButton=mine?`<button class="edit-icon modal-edit" onclick="openRecipeForm('${r.id}')">${icon('pencil')}</button>`:'';
+ modal(`${editButton}<h2>${esc(r.title)}</h2><div class="hero-detail"><b>${r.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Creator</span>@${esc(r.ownerHandle||'user')}</div><div><span>Method</span>${esc(r.method)}</div><div><span>Bean</span>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · ')||'Standalone')}</div><div><span>Roast</span>${esc(r.roastLevel||'—')}</div><div><span>Recipe</span>${esc(recipeParamLine(r))}</div><div><span>Community</span>${community.count?`${community.avg}/10 from ${community.count} rating${community.count===1?'':'s'}`:'No ratings yet'}</div><div><span>Your Rating</span>${community.mine?`${community.mine.rating}/10${community.mine.review?' · '+esc(community.mine.review):''}`:'Not rated yet'}</div><div><span>Tags</span>${esc((r.tags||[]).join(', ')||'—')}</div><div><span>Notes</span>${esc(r.notes||'—')}</div>${stages?`<div><span>Stages</span><section class="stage-detail">${stages}</section></div>`:''}</div>${mine?`<button class="btn full" onclick="publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public Recipe':'Publish Recipe'}</button>`:`<button class="btn full" onclick="saveCommunityRecipe('${r.id}')">${saved?'Saved to Library':'Save to My Library'}</button><button class="btn secondary full" onclick="toggleFollow('${r.ownerId}')">${following?'Unfollow':'Follow'} @${esc(r.ownerHandle||'user')}</button><button class="btn secondary full" onclick="openRatingForm('${r.id}')">${community.mine?'Update Rating':'Rate Recipe'}</button>`}<button class="btn secondary full" onclick="useCommunityRecipe('${r.id}')">${mine&&r.sourceBeanId?'Brew Using This Profile':'Copy to Current Bean'}</button>`)
+}
+function useCommunityRecipe(id){
+ const r=recipeById(id); if(!r)return;
+ if(r.ownerId===state.community.user.id&&r.sourceBeanId&&r.sourceProfileId){closeModal(); brewUsingProfile(r.sourceBeanId,r.method,r.sourceProfileId); return}
+ copyRecipeToCurrentBean(id);
+}
+function openRatingForm(recipeId){
+ ensureCommunity(state);
+ const r=recipeById(recipeId), existing=communityRating(recipeId).mine;
+ if(!r)return;
+ modal(`<h2>Rate Recipe</h2><p>${esc(r.title)} by @${esc(r.ownerHandle||'user')}</p>${ratingBlock(existing?.rating||8)}<label>Review Notes</label><textarea id="ratingReview" placeholder="What worked, what would you change?">${esc(existing?.review||'')}</textarea><button class="btn full" onclick="saveCommunityRating('${recipeId}')">Save Rating</button>`);
+ updateRating(existing?.rating||8);
+}
+async function saveCommunityRating(recipeId){
+ ensureCommunity(state);
+ const rating={id:`${recipeId}:${state.community.user.id}`,recipeId,userId:state.community.user.id,userHandle:state.community.user.handle,rating:+$('#rating').value,review:$('#ratingReview').value,createdAt:communityRating(recipeId).mine?.createdAt||iso(),updatedAt:iso()};
+ const i=state.community.ratings.findIndex(r=>r.recipeId===recipeId&&r.userId===state.community.user.id);
+ if(i>=0)state.community.ratings[i]=rating; else state.community.ratings.unshift(rating);
+ trackEvent('recipe.rated',{recipeId,rating:rating.rating});
+ save();
+ try{await postJson('/api/ratings',rating)}catch(e){state.community.sync.lastError='Rating sync failed';save()}
+ closeModal();
+ render();
+ toast('Recipe rated');
+}
+function copyRecipeToCurrentBean(id){
+ const r=recipeById(id), b=currentBean(); if(!r||!b)return;
+ const p=r.params||{}, arr=b.brewProfiles[r.method]=b.brewProfiles[r.method]||[];
+ const profile={id:uid(),name:r.title,active:false,createdAt:iso(),score:+(r.score||0),grinderId:state.userProfile.grinders[0]?.id,grind:+(p.grind||0),dose:+(p.dose||0),temp:+(p.temp||0),notes:`Copied from @${r.ownerHandle||'user'}: ${r.notes||''}`};
+ if(r.method==='Espresso')Object.assign(profile,{yieldOut:+(p.yieldOut||0),time:+(p.time||0),ratio:p.ratio||ratio({dose:p.dose,yieldOut:p.yieldOut})}); else Object.assign(profile,{water:+(p.water||0),totalTime:+(p.totalTime||0),bloom:+(p.bloom||0),stages:p.stages||[]});
+ arr.push(profile);
+ trackEvent('recipe.copied',{recipeId:id,beanId:b.id});
+ selectedMethod=r.method;
+ save();
+ closeModal();
+ openBeanDetail(b.id);
+ toast('Recipe copied to current bean');
+}
+function openRecipeForm(id=''){
+ ensureCommunity(state);
+ const r=id?recipeById(id):{method:selectedMethod,title:'',roastLevel:preferredRoast(),params:{grind:18,dose:18,yieldOut:36,time:30,temp:93},tags:[...state.userProfile.flavour.notes],score:7.5,notes:'',visibility:'private'};
+ if(id&&r.ownerId!==state.community.user.id){toast('Save a copy before editing');return}
+ const p=r.params||{}, output=r.method==='Espresso'?(p.yieldOut||36):(p.water||320), time=r.method==='Espresso'?(p.time||30):(p.totalTime||180);
+ modal(`<h2>${id?'Edit':'Create'} Recipe</h2><label>Title</label><input id="recipeTitle" value="${esc(r.title||'')}"><label>Method</label><select id="recipeFormMethod">${brewMethods.map(m=>`<option ${r.method===m?'selected':''}>${m}</option>`).join('')}</select><label>Roast</label><select id="recipeFormRoast">${['Light','Medium','Dark'].map(x=>`<option ${r.roastLevel===x?'selected':''}>${x}</option>`).join('')}</select><div class="metric-grid"><label>Grind<input id="recipeGrind" type="number" step="0.1" value="${p.grind||18}"></label><label>Dose<input id="recipeDose" type="number" step="0.1" value="${p.dose||18}"></label></div><div class="metric-grid"><label>Output / Water<input id="recipeOutput" type="number" step="0.1" value="${output}"></label><label>Time<input id="recipeTime" type="number" step="0.1" value="${time}"></label></div><label>Temperature</label><input id="recipeTemp" type="number" step="1" value="${p.temp||93}">${ratingBlock(r.score||7.5)}<label>Taste Tags</label><div class="select-grid">${flavourTags.map(t=>`<button type="button" class="tile small ${(r.tags||[]).includes(t)?'selected':''}" data-recipe-tag="${t}" onclick="this.classList.toggle('selected')">${t}</button>`).join('')}</div><label>Notes</label><textarea id="recipeNotes">${esc(r.notes||'')}</textarea><button class="btn full" onclick="saveStandaloneRecipe('${id}')">Save Recipe</button>${id?`<button class="btn danger full" onclick="deleteCommunityRecipe('${id}')">Delete Recipe</button>`:''}`); updateRating(r.score||7.5)
+}
+function saveStandaloneRecipe(id=''){
+ ensureCommunity(state);
+ const method=$('#recipeFormMethod').value, isEsp=method==='Espresso', out=+$('#recipeOutput').value, time=+$('#recipeTime').value, roast=$('#recipeFormRoast').value;
+ const params={grind:+$('#recipeGrind').value,dose:+$('#recipeDose').value,temp:+$('#recipeTemp').value};
+ if(isEsp)Object.assign(params,{yieldOut:out,time,ratio:ratio({dose:params.dose,yieldOut:out})}); else Object.assign(params,{water:out,totalTime:time,bloom:0,stages:[]});
+ const old=id?recipeById(id):null, recipe={id:id||uid(),ownerId:state.community.user.id,ownerName:state.community.user.displayName,ownerHandle:state.community.user.handle,method,title:$('#recipeTitle').value||`${method} Recipe`,visibility:old?.visibility||'private',beanName:old?.beanName||'',roaster:old?.roaster||'',origin:old?.origin||'',process:old?.process||'',roastLevel:roast,params,tags:[...new Set([method,roast,...$$('[data-recipe-tag].selected').map(x=>x.dataset.recipeTag)])],score:+$('#rating').value,notes:$('#recipeNotes').value,saves:old?.saves||0,createdAt:old?.createdAt||iso(),updatedAt:iso()};
+ if(old)Object.assign(old,recipe); else state.community.recipes.unshift(recipe);
+ trackEvent(id?'recipe.updated':'recipe.created',{recipeId:recipe.id});
+ save();
+ closeModal();
+ view='recipes';
+ recipeTab='library';
+ render();
+ toast('Recipe saved');
+}
+function deleteCommunityRecipe(id){let r=recipeById(id); if(!r||r.ownerId!==state.community.user.id)return; if(confirm(`Delete recipe "${r.title}"?`)){state.community.recipes=state.community.recipes.filter(x=>x.id!==id); state.community.savedRecipeIds=state.community.savedRecipeIds.filter(x=>x!==id); trackEvent('recipe.deleted',{recipeId:id}); closeModal(); render()}}
+function moreView(){
+ ensureCommunity(state);
+ const c=state.community, last=c.sync.lastSyncAt?dateShort(c.sync.lastSyncAt):'Never';
+ const loc=c.user.location||{}, equipment=profileEquipment();
+ return `<section class="card"><h2>Account</h2><div class="account-state"><b>${c.session.signedIn?'Signed in':'Local profile'}</b><span>${esc(c.session.provider||'local')}</span></div><div class="auth-grid"><button onclick="socialSignIn('apple')">Continue with Apple</button><button onclick="socialSignIn('google')">Continue with Google</button><button onclick="socialSignIn('facebook')">Continue with Facebook</button></div><p>These buttons create provider-aware sessions in this prototype. Production mobile builds should exchange native Apple/Google/Facebook tokens with the same backend endpoint.</p>${c.session.signedIn?`<button class="btn secondary full" onclick="signOut()">Sign Out</button>`:''}</section><section class="card"><h2>Community Profile</h2><label>Display Name</label><input id="communityName" value="${esc(c.user.displayName)}"><label>Email</label><input id="communityEmail" type="email" value="${esc(c.user.email||c.session.email||'')}"><label>Handle</label><input id="communityHandle" value="${esc(c.user.handle)}"><label>City</label><input id="communityCity" value="${esc(loc.city||'')}" placeholder="Toronto"><div class="metric-grid"><label>Region<input id="communityRegion" value="${esc(loc.region||'')}" placeholder="ON"></label><label>Country<input id="communityCountry" value="${esc(loc.country||'')}" placeholder="Canada"></label></div><label>Bio</label><textarea id="communityBio">${esc(c.user.bio||'')}</textarea><section class="inner-card"><h3>Equipment Shared on Profile</h3><p>${esc(equipment.machine||'Machine not set')}</p><p>${esc((equipment.grinders||[]).map(g=>[g.name||g.model,g.burrType==='Other'?g.burrOther:g.burrType,g.profile].filter(Boolean).join(' / ')).join(', ')||'Grinder not set')}</p><button class="btn secondary full" onclick="editProfile()">Edit Equipment</button></section><button class="btn full" onclick="saveCommunitySettings()">Save Profile</button></section><section class="card"><h2>Backend Tracking</h2><label>Backend API URL</label><input id="apiBase" placeholder="http://localhost:8787" value="${esc(c.sync.apiBase||'')}"><div class="tile ${c.sync.enabled?'selected':''}" onclick="toggleBackendSync()"><b>User data, follow, rating, and recipe sync</b><p>${c.sync.enabled?'Enabled':'Disabled'} · Last sync: ${last}</p></div>${c.sync.lastError?`<p class="error">${esc(c.sync.lastError)}</p>`:''}<button class="btn full" onclick="syncCommunity()">Sync Now</button></section><section class="card"><h2>Settings</h2><button class="btn full secondary" onclick="go('maintenance')">Maintenance Tracker</button><div class="tile ${state.settings.rateReminder?'selected':''}" onclick="state.settings.rateReminder=!state.settings.rateReminder;render()"><b>Ask me to rate my brew later</b><p>${state.settings.rateReminder?'Enabled':'Disabled'}</p></div><label>Rating reminder delay</label><select onchange="state.settings.rateDelay=this.value;save()"><option value="5" ${state.settings.rateDelay==5?'selected':''}>5 minutes</option><option value="10" ${state.settings.rateDelay==10?'selected':''}>10 minutes</option></select></section><section class="card"><h2>Data</h2><button class="btn full secondary" onclick="exportData()">Export Backup</button><button class="btn full secondary" onclick="document.getElementById('importBackup').click()">Import Backup</button><input type="file" id="importBackup" accept="application/json" hidden onchange="importData(event)"><button class="btn full secondary" onclick="localStorage.removeItem(KEY);location.reload()">Reset Demo Data</button></section>`
+}
+function toggleBackendSync(){ensureCommunity(state); if($('#apiBase'))state.community.sync.apiBase=$('#apiBase').value.trim(); state.community.sync.enabled=!state.community.sync.enabled; save(); render()}
+async function socialSignIn(provider){
+ ensureCommunity(state);
+ saveCommunitySettings(false);
+ const c=state.community, providerName=provider.charAt(0).toUpperCase()+provider.slice(1);
+ c.session={signedIn:true,provider,providerUserId:`${provider}:${c.user.handle}`,sessionId:'local-'+uid(),email:c.user.email||'',signedInAt:iso()};
+ c.user.authProvider=provider;
+ trackEvent('auth.sign_in',{provider});
+ try{
+  const data=await postJson('/api/auth/social',{provider,providerUserId:c.session.providerUserId,user:publicUser()});
+  if(data?.user)Object.assign(c.user,data.user);
+  if(data?.session)c.session.sessionId=data.session.id;
+ }catch(e){c.sync.lastError='Auth sync pending until backend is reachable'}
+ save();
+ render();
+ toast(`Signed in with ${providerName}`);
+}
+function signOut(){ensureCommunity(state); trackEvent('auth.sign_out',{provider:state.community.session.provider}); state.community.session={signedIn:false,provider:'local',providerUserId:'',sessionId:'',email:''}; save(); render()}
+function saveCommunitySettings(renderNow=true){
+ ensureCommunity(state);
+ const c=state.community;
+ c.user.displayName=$('#communityName').value||'Home Barista';
+ c.user.email=$('#communityEmail')?.value||c.user.email||'';
+ c.user.handle=($('#communityHandle').value||c.user.displayName).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'home-barista';
+ c.user.bio=$('#communityBio').value;
+ c.user.location={city:$('#communityCity')?.value||'',region:$('#communityRegion')?.value||'',country:$('#communityCountry')?.value||''};
+ c.user.equipment=profileEquipment();
+ c.session.email=c.user.email;
+ c.sync.apiBase=$('#apiBase')?.value.trim()||c.sync.apiBase||'';
+ c.recipes.forEach(r=>{if(r.ownerId===c.user.id){r.ownerName=c.user.displayName;r.ownerHandle=c.user.handle}});
+ trackEvent('community.settings.updated',{syncEnabled:c.sync.enabled});
+ save();
+ postJson('/api/users',publicUser()).catch(()=>{c.sync.lastError='Profile sync failed';save()});
+ if(renderNow){render();toast('Community settings saved')}
+}
+function importData(e){let f=e.target.files[0]; if(!f)return; let r=new FileReader(); r.onload=()=>{try{state=migrate(JSON.parse(r.result)); save(); render(); toast('Backup imported')}catch(err){toast('Import failed')}}; r.readAsText(f)}
+const originalSaveBrew=saveBrew;
+saveBrew=function(beanId,method){originalSaveBrew(beanId,method); trackEvent('brew.logged',{beanId,method})}
+const originalSaveRecipeProfile=saveRecipeProfile;
+saveRecipeProfile=function(beanId,m,pid){originalSaveRecipeProfile(beanId,m,pid); ensureCommunity(state); trackEvent(pid?'profile.updated':'profile.created',{beanId,method:m})}
+const originalSaveDialedProfile=saveDialedProfile;
+saveDialedProfile=function(beanId,method){originalSaveDialedProfile(beanId,method); ensureCommunity(state); trackEvent('profile.created',{beanId,method})}
+
+/* v16 profile/equipment refinements */
+function profileData(){
+ const p=state.userProfile||{};
+ const e=p.equipment||{};
+ const machine=p.machine||{};
+ const otherBrews=Array.isArray(p.otherBrews)?p.otherBrews:(p.otherBrew?[p.otherBrew]:[]);
+ const flavour=p.flavour||{};
+ return {
+  brew:p.brew||[],
+  otherBrews,
+  machine:{manufacturer:machine.manufacturer||e.espresso?.manufacturer||'',model:machine.model||e.espresso?.model||''},
+  grinders:(p.grinders&&p.grinders.length?p.grinders:[{id:uid(),model:'DF64',name:'DF64',burrType:'Stainless Steel',burrOther:'',profile:'Multipurpose (espresso)'}]).map(g=>({id:g.id||uid(),model:g.model||'DF64',name:g.name||g.model||'DF Grinder',burrType:g.burrType||'Stainless Steel',burrOther:g.burrOther||'',profile:g.profile||'Multipurpose (espresso)'})),
+  equipment:{
+   espresso:{manufacturer:e.espresso?.manufacturer||machine.manufacturer||'',model:e.espresso?.model||machine.model||''},
+   pourOver:{brewerType:e.pourOver?.brewerType||'',style:e.pourOver?.style||'conical',styleOther:e.pourOver?.styleOther||''},
+   aeroPress:{brewerType:e.aeroPress?.brewerType||'AeroPress'},
+   frenchPress:{brewerType:e.frenchPress?.brewerType||'French press'},
+   mokaPot:{brand:e.mokaPot?.brand||'',size:e.mokaPot?.size||''},
+  },
+  flavour:{roast:flavour.roast??52,notes:flavour.notes||[],customNotes:flavour.customNotes||[]},
+  workflow:p.workflow||[],
+ };
+}
+function methodLabel(m){return m==='Other'?(profileData().otherBrews.join(', ')||'Other'):m}
+function methodSelected(m){return !!document.querySelector(`[data-brew="${m}"].selected`)}
+function grinderName(g){return [g.name||g.model,g.burrType==='Other'?g.burrOther:g.burrType,g.profile].filter(Boolean).join(' • ')}
+function methodEquipment(method){
+ const p=profileData(), e=p.equipment;
+ if(method==='Espresso')return {title:'Espresso Machine',value:[e.espresso.manufacturer,e.espresso.model].filter(Boolean).join(' ')||'Espresso machine not set'};
+ if(method==='Pour Over')return {title:'Pour Over Brewer',value:[e.pourOver.brewerType,e.pourOver.style==='other'?e.pourOver.styleOther:e.pourOver.style].filter(Boolean).join(' • ')||'Pour over brewer not set'};
+ if(method==='AeroPress')return {title:'AeroPress',value:e.aeroPress.brewerType||'AeroPress'};
+ if(method==='French Press')return {title:'French Press',value:e.frenchPress.brewerType||'French press'};
+ if(method==='Moka Pot')return {title:'Moka Pot',value:[e.mokaPot.brand,e.mokaPot.size].filter(Boolean).join(' • ')||'Moka pot not set'};
+ return {title:'Other Brewer',value:p.otherBrews.join(', ')||'Other brewer not set'};
+}
+function profileEquipment(sourceState){
+ const s=arguments.length?sourceState:state, p=s?.userProfile||{}, e=p.equipment||{}, machineProfile=p.machine||{}, grinders=p.grinders||[];
+ const equipment={espresso:{manufacturer:e.espresso?.manufacturer||machineProfile.manufacturer||'',model:e.espresso?.model||machineProfile.model||''},pourOver:{brewerType:e.pourOver?.brewerType||'',style:e.pourOver?.style||'conical',styleOther:e.pourOver?.styleOther||''},aeroPress:{brewerType:e.aeroPress?.brewerType||'AeroPress'},frenchPress:{brewerType:e.frenchPress?.brewerType||'French press'},mokaPot:{brand:e.mokaPot?.brand||'',size:e.mokaPot?.size||''}};
+ const machine=[equipment.espresso.manufacturer,equipment.espresso.model].filter(Boolean).join(' ');
+ return {machine,brewers:equipment,otherBrews:Array.isArray(p.otherBrews)?p.otherBrews:(p.otherBrew?[p.otherBrew]:[]),grinders:grinders.map(g=>({id:g.id,model:g.model,name:g.name,burrType:g.burrType,burrOther:g.burrOther,profile:g.profile}))};
+}
+function profileCard(){
+ const p=profileData(), g=p.grinders[0]||{}, flavours=[...(p.flavour.notes||[]),...(p.flavour.customNotes||[])];
+ const equipment=(p.brew||[]).filter(m=>m!=='Other').map(m=>`${m}: ${methodEquipment(m).value}`).concat(p.brew.includes('Other')?p.otherBrews.map(x=>`Other: ${x}`):[]);
+ return `<section class="card profile-card"><button class="edit-icon" onclick="editProfile()">${icon('pencil')}</button><h2>Profile</h2><div class="method-row">${(p.brew||[]).map(m=>`<span title="${esc(methodLabel(m))}">${brewSvg(m)}</span>`).join('')}</div><div class="detail compact"><div><span>Grinders</span>${esc(p.grinders.map(x=>x.name||x.model).join(', ')||'Not set')}</div><div><span>Equipment</span>${esc(equipment.join(' · ')||'Not set')}</div><div><span>Preference</span>${p.flavour.roast<35?'Darker':p.flavour.roast>65?'Lighter':'Medium'} • ${esc(flavours.join(', ')||'Not set')}</div><div><span>Workflow</span>${esc((state.userProfile.workflow||[]).join(', ')||'Not set')}</div></div></section>`;
+}
+function grinderEditor(g,i){return `<section class="inner-card grinder-form" data-grinder-row data-id="${esc(g.id||uid())}"><h3>Grinder ${i+1}</h3><label>Name</label><input class="g-name" value="${esc(g.name||g.model||'')}"><label>Model</label><select class="g-model">${models.map(m=>`<option ${g.model===m?'selected':''}>${m}</option>`).join('')}</select><label>Burr Type</label><select class="g-burr" onchange="this.closest('[data-grinder-row]').querySelector('.g-other-wrap').style.display=this.value==='Other'?'block':'none'"><option ${g.burrType==='Red Titanium'?'selected':''}>Red Titanium</option><option ${g.burrType==='Stainless Steel'?'selected':''}>Stainless Steel</option><option ${g.burrType==='Other'?'selected':''}>Other</option></select><div class="g-other-wrap" style="display:${g.burrType==='Other'?'block':'none'}"><label>Other Burr</label><input class="g-other" value="${esc(g.burrOther||'')}"></div><label>Burr Profile</label><select class="g-profile"><option ${g.profile==='Brew'?'selected':''}>Brew</option><option ${g.profile==='Multipurpose (espresso)'?'selected':''}>Multipurpose (espresso)</option></select>${i?`<button class="btn danger full" type="button" onclick="this.closest('[data-grinder-row]').remove()">Remove Grinder</button>`:''}</section>`}
+function addGrinderField(){let g={id:uid(),model:'DF64',name:'DF64',burrType:'Stainless Steel',burrOther:'',profile:'Multipurpose (espresso)'}; $('#grinderList').insertAdjacentHTML('beforeend',grinderEditor(g,$$('[data-grinder-row]').length))}
+function addOtherBrewField(value=''){let n=$$('.other-brew-input').length+1; $('#otherBrewList').insertAdjacentHTML('beforeend',`<div class="field-action"><input class="other-brew-input" value="${esc(value)}" placeholder="Custom brewer ${n}"><button type="button" onclick="this.parentElement.remove();syncProfileEquipmentVisibility()">×</button></div>`); syncProfileEquipmentVisibility()}
+function addCustomFlavorField(value=''){$('#customFlavorList').insertAdjacentHTML('beforeend',`<div class="field-action"><input class="custom-flavor-input" value="${esc(value)}" placeholder="Custom flavour"><button type="button" onclick="this.parentElement.remove()">×</button></div>`)}
+function toggleProfileMethod(btn){btn.classList.toggle('selected');syncProfileEquipmentVisibility()}
+function syncProfileEquipmentVisibility(){
+ ['Espresso','Pour Over','AeroPress','French Press','Moka Pot','Other'].forEach(m=>{let el=document.querySelector(`[data-equip-for="${m}"]`); if(el)el.style.display=methodSelected(m)?'block':'none'});
+ let other=document.getElementById('otherBrewWrap'); if(other)other.style.display=methodSelected('Other')?'block':'none';
+ let names=$$('.other-brew-input').map(x=>x.value.trim()).filter(Boolean);
+ let preview=$('#otherBrewerPreview'); if(preview)preview.innerHTML=(names.length?names:['Select Other and name the brewer above']).map(x=>`<input readonly value="${esc(x)}">`).join('');
+}
+function toggleOtherFlavor(btn){btn.classList.toggle('selected');$('#customFlavorWrap').style.display=btn.classList.contains('selected')?'block':'none'}
+function editProfile(){
+ const p=profileData(), selected=new Set(p.brew||[]), flavourSet=new Set(p.flavour.notes||[]);
+ modal(`<h2>Edit Profile</h2><h3>Brew Methods</h3><div class="method-grid">${brewMethods.map(x=>`<button type="button" class="tile method ${selected.has(x)?'selected':''}" data-brew="${x}" onclick="toggleProfileMethod(this)">${brewSvg(x)}<em>${x}</em></button>`).join('')}</div><div id="otherBrewWrap" style="display:${selected.has('Other')?'block':'none'}"><label>Other Brew Methods</label><div id="otherBrewList">${(p.otherBrews.length?p.otherBrews:['']).map(x=>`<div class="field-action"><input class="other-brew-input" value="${esc(x)}" placeholder="Siphon, Cold Brew, Clever Dripper..."><button type="button" onclick="this.parentElement.remove();syncProfileEquipmentVisibility()">×</button></div>`).join('')}</div><button class="btn secondary full" type="button" onclick="addOtherBrewField()">+ Add Other Brew Method</button></div><h3 class="section-gap">Equipment</h3><div id="grinderList">${p.grinders.map(grinderEditor).join('')}</div><button class="btn secondary full" type="button" onclick="addGrinderField()">+ Add Grinder</button><section class="inner-card equipment-fields" data-equip-for="Espresso"><h3>Espresso Machine</h3><label>Manufacturer</label><input id="pmake" value="${esc(p.equipment.espresso.manufacturer)}"><label>Model</label><input id="pmodel" value="${esc(p.equipment.espresso.model)}"></section><section class="inner-card equipment-fields" data-equip-for="Pour Over"><h3>Pour Over Brewer</h3><label>Brewer Type</label><input id="pourType" value="${esc(p.equipment.pourOver.brewerType)}" placeholder="V60, Kalita, Origami..."><label>Brewer Style</label><select id="pourStyle" onchange="$('#pourStyleOtherWrap').style.display=this.value==='other'?'block':'none'"><option value="conical" ${p.equipment.pourOver.style==='conical'?'selected':''}>Conical</option><option value="flat bottom" ${p.equipment.pourOver.style==='flat bottom'?'selected':''}>Flat bottom</option><option value="other" ${p.equipment.pourOver.style==='other'?'selected':''}>Other</option></select><div id="pourStyleOtherWrap" style="display:${p.equipment.pourOver.style==='other'?'block':'none'}"><label>Other Style</label><input id="pourStyleOther" value="${esc(p.equipment.pourOver.styleOther)}"></div></section><section class="inner-card equipment-fields" data-equip-for="AeroPress"><h3>AeroPress</h3><label>Brewer Type</label><input id="aeroType" value="${esc(p.equipment.aeroPress.brewerType||'AeroPress')}"></section><section class="inner-card equipment-fields" data-equip-for="French Press"><h3>French Press</h3><label>Brewer Type</label><input id="frenchType" value="${esc(p.equipment.frenchPress.brewerType||'French press')}"></section><section class="inner-card equipment-fields" data-equip-for="Moka Pot"><h3>Moka Pot</h3><label>Brand</label><input id="mokaBrand" value="${esc(p.equipment.mokaPot.brand)}"><label>Size</label><input id="mokaSize" value="${esc(p.equipment.mokaPot.size)}" placeholder="3 cup, 6 cup..."></section><section class="inner-card equipment-fields" data-equip-for="Other"><h3>Other Brewer</h3><label>Specified Brewer</label><div id="otherBrewerPreview"></div></section><label>Roast Preference</label><div class="roast-pref"><span>Light</span><span>Dark</span></div><input id="roastpref" class="roast-slider" type="range" min="0" max="100" value="${p.flavour.roast}"><label>Flavour Preferences</label><div class="select-grid">${flavourTags.map(x=>`<button type="button" class="tile ${flavourSet.has(x)?'selected':''}" data-pref="${x}" onclick="this.classList.toggle('selected')">${x}</button>`).join('')}<button type="button" class="tile ${p.flavour.customNotes.length?'selected':''}" id="otherFlavorBtn" onclick="toggleOtherFlavor(this)">Other</button></div><div id="customFlavorWrap" style="display:${p.flavour.customNotes.length?'block':'none'}"><label>Other Flavour Descriptions</label><div id="customFlavorList">${(p.flavour.customNotes.length?p.flavour.customNotes:['']).map(x=>`<div class="field-action"><input class="custom-flavor-input" value="${esc(x)}" placeholder="Custom flavour"><button type="button" onclick="this.parentElement.remove()">×</button></div>`).join('')}</div><button class="btn secondary full" type="button" onclick="addCustomFlavorField()">+ Add Flavour</button></div><label>Workflow</label><div class="select-grid">${['Blind shaking','WDT','RDT','Slow feed','Distributor tool','Pre-Infusion'].map(x=>`<button type="button" class="tile ${(p.workflow||[]).includes(x)?'selected':''}" data-work="${x}" onclick="this.classList.toggle('selected')">${x}</button>`).join('')}</div><div class="action-gap"><button class="btn full" onclick="saveProfile()">Save Profile</button></div>`);
+ syncProfileEquipmentVisibility();
+}
+function saveProfile(){
+ const brew=$$('[data-brew].selected').map(x=>x.dataset.brew);
+ const otherBrews=$$('.other-brew-input').map(x=>x.value.trim()).filter(Boolean);
+ const grinders=$$('[data-grinder-row]').map(row=>({id:row.dataset.id||uid(),name:$('.g-name',row).value||$('.g-model',row).value,model:$('.g-model',row).value,burrType:$('.g-burr',row).value,burrOther:$('.g-burr',row).value==='Other'?$('.g-other',row).value:'',profile:$('.g-profile',row).value}));
+ const customNotes=$$('.custom-flavor-input').map(x=>x.value.trim()).filter(Boolean);
+ const equipment={espresso:{manufacturer:$('#pmake')?.value||'',model:$('#pmodel')?.value||''},pourOver:{brewerType:$('#pourType')?.value||'',style:$('#pourStyle')?.value||'conical',styleOther:$('#pourStyleOther')?.value||''},aeroPress:{brewerType:$('#aeroType')?.value||'AeroPress'},frenchPress:{brewerType:$('#frenchType')?.value||'French press'},mokaPot:{brand:$('#mokaBrand')?.value||'',size:$('#mokaSize')?.value||''}};
+ state.userProfile={...state.userProfile,brew,machine:{manufacturer:equipment.espresso.manufacturer,model:equipment.espresso.model},equipment,grinders:grinders.length?grinders:profileData().grinders,flavour:{roast:+$('#roastpref').value,notes:$$('[data-pref].selected').map(x=>x.dataset.pref),customNotes},workflow:$$('[data-work].selected').map(x=>x.dataset.work),otherBrews,otherBrew:otherBrews[0]||''};
+ if(state.community?.user)state.community.user.equipment=profileEquipment();
+ closeModal(); render();
+}
+function settingBlock(v,selectedGrinderId=''){
+ const grinders=profileData().grinders, selected=selectedGrinderId||grinders[0]?.id||'';
+ const options=grinders.map(g=>`<option value="${g.id}" ${g.id===selected?'selected':''}>${esc(g.name||g.model||'DF Grinder')}</option>`).join('');
+ return `<div class="setting-card"><div><label>Grinder</label><select id="logGrinder">${options}</select></div><label class="setting-num">Setting<input id="grind" type="number" step="0.1" value="${(+v||0).toFixed(1)}" onchange="syncRuler(+this.value)"></label><div class="ruler" id="ruler"><div class="track" id="track"></div><div class="center-line"></div></div></div>`;
+}
+function flavourButtons(){return [...flavourTags,...(profileData().flavour.customNotes||[])].map(x=>`<button type="button" class="tile small" data-flav="${esc(x)}" onclick="this.classList.toggle('selected')">${esc(x)}</button>`).join('')}
+function logView(pref={}){
+ let b=bean(pref.beanId)||currentBean(); let m=pref.method||selectedMethod||'Espresso'; let p=pref.profileId?activeProfile(b,m):activeProfile(b,m); let temp=tempVal(p,m), gId=p?.grinderId||lastBrew(b?.id,m)?.grinderId||profileData().grinders[0]?.id;
+ const isEsp=m==='Espresso', isPour=m==='Pour Over';
+ const pourControls=isPour?`<div class="seg"><button class="sel" id="manualModeBtn" onclick="setPourMode('manual')">Manual Brew</button><button id="guidedModeBtn" onclick="setPourMode('guided')">Follow Recipe</button></div><div id="manualPour"><div class="metric-grid"><label>Bloom Timer<input id="bloom" type="number" value="${p?.bloom||45}"></label><label>Total Brew Timer<input id="manualTime" type="number" step="0.1" placeholder="optional" value="${p?.totalTime||''}"></label></div></div><div id="guidedPour" style="display:none"><label>Recipe Stages</label><div id="pourStages">${renderPourStages(p?.stages||[{name:'Bloom',time:45,weight:60},{name:'Pour 1',time:75,weight:160},{name:'Pour 2',time:115,weight:240},{name:'Final Pour',time:155,weight:320}])}</div><button class="btn secondary" onclick="addPourStage()" type="button">Add Pour</button></div>`:'';
+ return `<section class="card"><h2>Log Brew</h2><div class="seg"><button class="sel">Existing Bean</button><button onclick="openBeanForm()">New Bean</button></div><label>Bean</label><select id="logBean" onchange="state.currentBeanId=this.value;render()">${state.beans.filter(x=>x.status==='current').map(x=>`<option value="${x.id}" ${x.id===b?.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><label>Brew Method</label>${methodSelector(m,'log','')}${settingBlock(p?.grind||lastBrew(b?.id,m)?.grind||18.6,gId)}<div class="metric-grid"><label>Dose<input id="dose" type="number" step="0.1" value="${p?.dose||18}"></label>${isEsp?`<label>Yield<input id="yieldOut" type="number" step="0.1" value="${p?.yieldOut||36}"></label>`:`<label>Water<input id="water" type="number" step="1" value="${p?.water||320}"></label>`}</div><label>Temperature</label><input id="temp" type="number" step="1" value="${temp}">${pourControls}${timerBlock(m)}${ratingBlock(7.5)}<label>Flavour Description</label><div class="select-grid">${flavourButtons()}</div><label>Flavour Notes</label><textarea id="notes" placeholder="Sweet, clean, slightly fast..."></textarea><button class="btn full" onclick="saveBrew('${b?.id||''}','${m}')">Save Brew</button><button class="btn secondary full" onclick="saveDialedProfile('${b?.id||''}','${m}')">Save Dialed-In Profile</button></section>`;
+}
+function selectedLogGrinder(){return $('#logGrinder')?.value||profileData().grinders[0]?.id}
+saveBrew=function(beanId,method){let elapsed=timer.elapsed/1000 || +($('#manualTime')?.value||0); let data={id:uid(),beanId:beanId||$('#logBean').value,method,grinderId:selectedLogGrinder(),grind:+$('#grind').value,dose:+$('#dose').value,temp:+($('#temp')?.value||0),rating:+$('#rating').value,flavours:$$('[data-flav].selected').map(x=>x.dataset.flav),notes:$('#notes').value,createdAt:iso()}; if(method==='Espresso')Object.assign(data,{yieldOut:+$('#yieldOut').value,time:elapsed||0}); else Object.assign(data,{water:+$('#water').value,totalTime:elapsed||0}); if(method==='Pour Over')Object.assign(data,{bloom:+($('#bloom')?.value||pourBloom||0),stages:collectStages()}); state.brews.unshift(data); state.currentBeanId=data.beanId; stopTimer(false); trackEvent('brew.logged',{beanId:data.beanId,method}); toast('Brew saved'); go('home')}
+saveDialedProfile=function(beanId,method){let b=bean(beanId||$('#logBean').value); if(!b)return; let name=prompt('Profile name','Current')||'Current'; let arr=b.brewProfiles[method]=b.brewProfiles[method]||[]; if(name.toLowerCase()==='current')arr.forEach(p=>p.active=false); let p={id:uid(),name,active:name.toLowerCase()==='current',createdAt:iso(),score:+($('#rating')?.value||0),grinderId:selectedLogGrinder(),grind:+$('#grind').value,dose:+$('#dose').value,temp:+($('#temp')?.value||0),notes:$('#notes')?.value||''}; if(method==='Espresso')Object.assign(p,{yieldOut:+$('#yieldOut').value,time:timer.elapsed/1000||0,ratio:ratio({dose:+$('#dose').value,yieldOut:+$('#yieldOut').value})}); else Object.assign(p,{water:+$('#water').value,totalTime:timer.elapsed/1000||0}); if(method==='Pour Over')Object.assign(p,{bloom:+($('#bloom')?.value||pourBloom||0),stages:collectStages()}); arr.push(p); trackEvent('profile.created',{beanId:b.id,method}); toast('Dialed-in profile saved'); render()}
+function saveRecipeProfile(beanId,m,pid){let b=bean(beanId), arr=b.brewProfiles[m]=b.brewProfiles[m]||[], old=arr.find(x=>x.id===pid), name=$('#pname').value||'Current'; let p={id:pid||uid(),name,active:name.toLowerCase()==='current',createdAt:old?.createdAt||iso(),score:+$('#rating').value,grinderId:selectedLogGrinder(),grind:+$('#grind').value,dose:+$('#pdose').value,temp:+($('#ptemp')?.value||0),notes:$('#pnotes').value}; if(p.active)arr.forEach(x=>x.active=false); if(m==='Espresso')Object.assign(p,{yieldOut:+$('#pout').value,time:+$('#ptime').value,ratio:ratio({dose:p.dose,yieldOut:+$('#pout').value})}); else Object.assign(p,{water:+$('#pout').value,totalTime:+$('#ptime').value}); if(m==='Pour Over')Object.assign(p,{bloom:+($('#pbloom')?.value||0),stages:collectStages()}); if(old)Object.assign(old,p); else arr.push(p); trackEvent(pid?'profile.updated':'profile.created',{beanId,method:m}); closeModal(); openBeanDetail(beanId)}
+function methodEquipmentCards(method,g){
+ const m=methodEquipment(method);
+ return `<div>${equipSvg('grinder')}<b>${esc(g.name||g.model||'—')}</b><small>${esc(grinderName(g)||'Grinder')}</small></div><div>${equipSvg(method==='Espresso'?'machine':'grinder')}<b>${esc(m.value)}</b><small>${esc(m.title)}</small></div>`;
+}
+function openBeanDetail(id,modalOpen=true){
+ let b=bean(id); if(!b)return; if(!b.brewProfiles)b.brewProfiles={}; if(!b.brewProfiles[selectedMethod])selectedMethod=Object.keys(b.brewProfiles)[0]||'Espresso';
+ let p=activeProfile(b,selectedMethod), g=grinder(p?.grinderId||b.grinderId), recent=brewsFor(b.id,selectedMethod).slice(0,3);
+ let html=`<button class="back" onclick="closeModal()">${icon('back')}</button><button class="edit-icon modal-edit" onclick="openBeanForm('${b.id}')">${icon('pencil')}</button><div class="bean-hero"><button class="bag large ${b.photo?'has-photo':''}" onclick="pickPhoto('${b.id}')">${b.photo?`<img src="${b.photo}">`:'DF'}<em>${icon('camera')}</em></button><div><h1>${esc(b.name)}</h1><p>${esc([b.process,b.origin].filter(Boolean).join(' • '))}</p><span class="pill green">${b.status==='current'?'Current Bean':'Archived'}</span></div></div><h3>Brew Profiles</h3>${methodTabs(b,selectedMethod)}${profilePanel(b,selectedMethod,p,g)}<section class="inner-card"><h3>Equipment</h3><div class="equipment">${methodEquipmentCards(selectedMethod,g)}</div></section><section class="inner-card"><h3>Last 3 Brews <button onclick="showBeanHistory('${b.id}','${selectedMethod}')">View All (20)</button></h3><div class="mini-brews">${recent.map(x=>`<button onclick="brewDetail('${x.id}')"><small>${dateShort(x.createdAt)}</small><b>${x.rating||'—'}</b><span>${fmt(x.time||x.totalTime)}s</span></button>`).join('')||'<p>No brews yet.</p>'}</div></section><section class="inner-card"><h3>Saved Profiles (${selectedMethod}) <button onclick="manageProfiles('${b.id}','${selectedMethod}')">Manage</button></h3><div class="saved-profiles">${(b.brewProfiles[selectedMethod]||[]).map(pr=>`<button class="${pr.active?'sel':''}" onclick="profileDetail('${b.id}','${selectedMethod}','${pr.id}')"><b>${esc(pr.name)}</b><small>${dateShort(pr.createdAt)} · ${pr.score||'—'} Score</small></button>`).join('')}<button class="add" onclick="profileForm('${b.id}','${selectedMethod}')">+<small>Add New</small></button></div></section>`;
+ if(modalOpen)modal(html); else {$('.modal').innerHTML=`<div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}`;bind();}
+}
+function brewSvg(m){
+ const paths={
+  Espresso:'M18 29h25v8a12.5 12.5 0 0 1-25 0v-8z M43 31h5a4.5 4.5 0 0 1 0 9h-5 M16 47h30 M24 20v5 M31 18v7 M38 20v5 M23 15h16',
+  'Pour Over':'M19 12h26l-5.5 19h-15L19 12z M23.5 20h17 M26 31h12 M22 48h20 M24.5 42h15 M27 31l-4 11h18l-4-11',
+  AeroPress:'M24 12h16v30H24V12z M21 9h22 M26.5 20h11 M26.5 34h11 M19 47h26 M22 42h20 M31 12v30',
+  'French Press':'M22 15h18v31H22V15z M24 10h14 M31 7v17 M19 50h24 M40 23h5v16h-5 M25 36c4 2.5 10 2.5 14 0',
+  'Moka Pot':'M21 25h22l5 25H16l5-25z M24 25l2.5-15h11L40 25 M20 35h24 M45 32h6 M50 33v12 M27 10h10 M29 18h6',
+  More:'M20 32h.1 M32 32h.1 M44 32h.1',
+  Other:'M32 16v32 M16 32h32'
+ };
+ return `<svg class="brew-icon" viewBox="0 0 64 64" aria-hidden="true"><path d="${paths[m]||paths.Other}"/></svg>`;
+}
+
+/* v17 pour-over recipe creation and focused brew flow */
+let pourFocus={running:false,start:0,int:null,stages:[],stageIndex:0,lastStageIndex:-1};
+function defaultPourStages(){return [{name:'Bloom',time:45,weight:60},{name:'Pour 1',time:75,weight:160},{name:'Pour 2',time:115,weight:240},{name:'Final Pour',time:155,weight:320}]}
+function normalizePourStages(stages){
+ let source=Array.isArray(stages)&&stages.length?stages:defaultPourStages();
+ let rows=source.map((s,i)=>({name:s.name||stageNameForIndex(i,source.length),time:+s.time||0,weight:+s.weight||0}));
+ if(!rows.some(s=>s.name==='Bloom'))rows.unshift({name:'Bloom',time:45,weight:60});
+ rows=rows.filter(s=>s.name!=='Final Pour');
+ let numbered=rows.filter(s=>s.name==='Bloom'||/^Pour \d+$/.test(s.name)).map((s,i)=>({...s,name:i===0?'Bloom':`Pour ${i}`}));
+ let final=source.find(s=>s.name==='Final Pour')||{time:numbered[numbered.length-1]?.time+40||155,weight:numbered[numbered.length-1]?.weight+80||320};
+ return [...numbered,{name:'Final Pour',time:+final.time||155,weight:+final.weight||320}];
+}
+function stageNameForIndex(i,total){if(i===0)return'Bloom'; if(i===total-1)return'Final Pour'; return`Pour ${i}`}
+function renderPourStages(stages){
+ const rows=normalizePourStages(stages);
+ return `<div class="stage-table"><div class="stage-head"><span>Recipe Stage</span><span>Time</span><span>Weight (g)</span><span></span></div>${rows.map((s,i)=>`<div class="stage-row fixed-stage" data-stage-row><span class="stage-label">${esc(s.name)}</span><input class="stage-name" type="hidden" value="${esc(s.name)}"><input class="stage-time" type="number" inputmode="numeric" min="0" step="1" value="${s.time}"><input class="stage-weight" type="number" inputmode="numeric" min="0" step="1" value="${s.weight}">${s.name!=='Bloom'&&s.name!=='Final Pour'?`<button type="button" onclick="removePourStage(this)">×</button>`:'<span></span>'}</div>`).join('')}</div>`;
+}
+function renumberPourStageRows(){
+ const rows=$$('[data-stage-row]');
+ rows.forEach((r,i)=>{let name=stageNameForIndex(i,rows.length); $('.stage-label',r).textContent=name; $('.stage-name',r).value=name});
+}
+function addPourStage(){
+ let rows=$$('[data-stage-row]'), final=rows[rows.length-1], nextNum=Math.max(1,...rows.map(r=>+($('.stage-name',r).value.match(/^Pour (\d+)$/)?.[1]||0)))+1;
+ let prev=rows[rows.length-2]||rows[0], time=(+$('.stage-time',prev)?.value||45)+40, weight=(+$('.stage-weight',prev)?.value||60)+80;
+ final.insertAdjacentHTML('beforebegin',`<div class="stage-row fixed-stage" data-stage-row><span class="stage-label">Pour ${nextNum}</span><input class="stage-name" type="hidden" value="Pour ${nextNum}"><input class="stage-time" type="number" inputmode="numeric" min="0" step="1" value="${time}"><input class="stage-weight" type="number" inputmode="numeric" min="0" step="1" value="${weight}"><button type="button" onclick="removePourStage(this)">×</button></div>`);
+ renumberPourStageRows();
+}
+function removePourStage(btn){btn.closest('[data-stage-row]').remove();renumberPourStageRows()}
+function collectStages(){return normalizePourStages($$('[data-stage-row]').map(r=>({name:$('.stage-name',r).value,time:+$('.stage-time',r).value,weight:+$('.stage-weight',r).value})))}
+function pourRecipeOptions(beanId){let b=bean(beanId)||currentBean(); return (b?.brewProfiles?.['Pour Over']||[]).map(p=>`<button type="button" class="recipe-option" onclick="loadPourRecipe('${b.id}','${p.id}')"><b>${esc(p.name)}</b><span>${p.dose||'—'}g / ${p.water||'—'}g · ${p.score||'—'} score</span></button>`).join('')||'<p>No saved Pour Over recipes for this bean yet. Create one first or copy a community recipe to this bean.</p>'}
+function setPourFlow(mode){$('#pourRecipeCreation').style.display=mode==='create'?'block':'none';$('#pourFindRecipe').style.display=mode==='find'?'block':'none';$('#recipeCreateBtn').classList.toggle('sel',mode==='create');$('#recipeFindBtn').classList.toggle('sel',mode==='find')}
+function loadPourRecipe(beanId,pid){
+ const p=(bean(beanId)?.brewProfiles?.['Pour Over']||[]).find(x=>x.id===pid); if(!p)return;
+ $('#grind').value=(+p.grind||0).toFixed(1); syncRuler(+p.grind||0); $('#dose').value=p.dose||''; $('#water').value=p.water||''; $('#temp').value=tempVal(p,'Pour Over'); if($('#logGrinder'))$('#logGrinder').value=p.grinderId||selectedLogGrinder();
+ $('#pourStages').innerHTML=renderPourStages(p.stages||defaultPourStages());
+ setPourFlow('create');
+ toast('Recipe loaded');
+}
+function pourControls(p,b){
+ const stages=normalizePourStages(p?.stages||defaultPourStages());
+ if(p?.water)stages[stages.length-1].weight=+p.water;
+ return `<div class="seg"><button class="sel" id="recipeCreateBtn" onclick="setPourFlow('create')" type="button">Recipe Creation</button><button id="recipeFindBtn" onclick="setPourFlow('find')" type="button">Find Existing Recipe</button></div><div id="pourRecipeCreation"><label>Recipe Stages</label><div id="pourStages">${renderPourStages(stages)}</div><button class="btn secondary full" onclick="addPourStage()" type="button">Add Pour</button><button class="btn full" onclick="showPourInstructions()" type="button">Start Focused Brew</button></div><div id="pourFindRecipe" style="display:none"><label>Saved Pour Over Recipes</label><div class="recipe-options">${pourRecipeOptions(b?.id)}</div></div><input id="manualTime" type="hidden" value="${p?.totalTime||stages[stages.length-1]?.time||0}"><input id="bloom" type="hidden" value="${stages[0]?.time||45}">`;
+}
+function showPourInstructions(){
+ const stages=collectStages();
+ if(!stages.length){toast('Add recipe stages first');return}
+ modal(`<h2>Focused Pour Over</h2><p>Place your brewer on the scale and start pouring when the timer begins. Brew Library will automatically advance through each stage using your planned times.</p><div class="stage-progress">${stages.map(s=>`<span>${esc(s.name)}</span>`).join('')}</div><button class="btn full" onclick="startFocusedPour()">Start Brew</button>`);
+}
+function startFocusedPour(){let stages=collectStages(); closeModal(); pourFocus={running:true,start:Date.now(),int:null,stages,stageIndex:0,lastStageIndex:-1}; h(18); renderFocusedPour(); pourFocus.int=setInterval(renderFocusedPour,250)}
+function focusedStageIndex(elapsed,stages){let idx=0; for(let i=1;i<stages.length;i++){if(elapsed>=stages[i-1].time)idx=i} return Math.min(idx,stages.length-1)}
+function renderFocusedPour(){
+ if(!pourFocus.running)return;
+ let elapsed=(Date.now()-pourFocus.start)/1000, stages=pourFocus.stages, idx=focusedStageIndex(elapsed,stages), cur=stages[idx], next=stages[idx+1], remaining=next?Math.max(0,Math.ceil(cur.time-elapsed)):0;
+ if(idx!==pourFocus.lastStageIndex){pourFocus.lastStageIndex=idx; h(20)}
+ let start=idx===0?0:stages[idx-1].time, end=cur.time, pct=Math.max(0,Math.min(100,(elapsed-start)/Math.max(1,end-start)*100)), total=stages[stages.length-1]?.time||elapsed, totalPct=Math.max(0,Math.min(100,elapsed/total*100));
+ let html=`<div class="focused-brew"><h2>Current Stage: ${esc(cur.name)}</h2><div class="focus-timer ${remaining<=5&&next?'urgent':''}" style="--stagePct:${pct}%;--totalPct:${totalPct}%"><b>${fmt(elapsed)}</b><span>Target Weight: ${cur.weight}g</span></div><section class="next-pour ${remaining<=5&&next?'pulse':''}"><h3>${next?'Next: '+esc(next.name):'Final stage'}</h3><p>${next?'Starts in: '+remaining+' seconds':'Finish when drawdown is complete.'}</p>${next&&remaining<=5?`<strong>Next: ${esc(next.name)} in ${remaining}s</strong>`:''}</section><div class="stage-progress">${stages.map((s,i)=>`<span class="${i<idx?'done':i===idx?'active':''}">${esc(s.name)}</span>`).join('')}</div><button class="btn full" onclick="finishFocusedPour()">Finish Brew</button><button class="btn secondary full" onclick="cancelFocusedPour()">Cancel</button></div>`;
+ let m=$('#modal .modal'); if(m)m.innerHTML=`<div class="modal-head"><span></span><button onclick="cancelFocusedPour()">×</button></div>${html}`; else modal(html);
+ if(!next&&elapsed>=cur.time){let mt=$('#manualTime'); if(mt)mt.value=elapsed.toFixed(1)}
+}
+function finishFocusedPour(){if(pourFocus.int)clearInterval(pourFocus.int); timer.elapsed=Date.now()-pourFocus.start; let mt=$('#manualTime'); if(mt)mt.value=(timer.elapsed/1000).toFixed(1); pourFocus.running=false; closeModal(); toast('Focused brew complete')}
+function cancelFocusedPour(){if(pourFocus.int)clearInterval(pourFocus.int); pourFocus.running=false; closeModal()}
+function logView(pref={}){
+ let b=bean(pref.beanId)||currentBean(); let m=pref.method||selectedMethod||'Espresso'; let p=pref.profileId?activeProfile(b,m):activeProfile(b,m); let temp=tempVal(p,m), gId=p?.grinderId||lastBrew(b?.id,m)?.grinderId||profileData().grinders[0]?.id;
+ const isEsp=m==='Espresso', isPour=m==='Pour Over';
+ return `<section class="card"><h2>Log Brew</h2><div class="seg"><button class="sel">Existing Bean</button><button onclick="openBeanForm()">New Bean</button></div><label>Bean</label><select id="logBean" onchange="state.currentBeanId=this.value;render()">${state.beans.filter(x=>x.status==='current').map(x=>`<option value="${x.id}" ${x.id===b?.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><label>Brew Method</label>${methodSelector(m,'log','')}${settingBlock(p?.grind||lastBrew(b?.id,m)?.grind||18.6,gId)}<div class="metric-grid"><label>Dose<input id="dose" type="number" step="0.1" value="${p?.dose||18}"></label>${isEsp?`<label>Yield<input id="yieldOut" type="number" step="0.1" value="${p?.yieldOut||36}"></label>`:`<label>Water<input id="water" type="number" step="1" value="${p?.water||320}"></label>`}</div><label>Temperature</label><input id="temp" type="number" step="1" value="${temp}">${isPour?pourControls(p,b):timerBlock(m)}${ratingBlock(7.5)}<label>Flavour Description</label><div class="select-grid">${flavourButtons()}</div><label>Flavour Notes</label><textarea id="notes" placeholder="Sweet, clean, slightly fast..."></textarea><button class="btn full" onclick="saveBrew('${b?.id||''}','${m}')">Save Brew</button><button class="btn secondary full" onclick="saveDialedProfile('${b?.id||''}','${m}')">Save Dialed-In Profile</button></section>`;
+}
+function toggleHaptics(){state.settings.haptics=state.settings.haptics===false; save(); render()}
+function moreView(){
+ ensureCommunity(state);
+ const c=state.community, last=c.sync.lastSyncAt?dateShort(c.sync.lastSyncAt):'Never';
+ const loc=c.user.location||{}, equipment=profileEquipment();
+ return `<section class="card"><h2>Account</h2><div class="account-state"><b>${c.session.signedIn?'Signed in':'Local profile'}</b><span>${esc(c.session.provider||'local')}</span></div><div class="auth-grid"><button onclick="socialSignIn('apple')">Continue with Apple</button><button onclick="socialSignIn('google')">Continue with Google</button><button onclick="socialSignIn('facebook')">Continue with Facebook</button></div><p>These buttons create provider-aware sessions in this prototype. Production mobile builds should exchange native Apple/Google/Facebook tokens with the same backend endpoint.</p>${c.session.signedIn?`<button class="btn secondary full" onclick="signOut()">Sign Out</button>`:''}</section><section class="card"><h2>Community Profile</h2><label>Display Name</label><input id="communityName" value="${esc(c.user.displayName)}"><label>Email</label><input id="communityEmail" type="email" value="${esc(c.user.email||c.session.email||'')}"><label>Handle</label><input id="communityHandle" value="${esc(c.user.handle)}"><label>City</label><input id="communityCity" value="${esc(loc.city||'')}" placeholder="Toronto"><div class="metric-grid"><label>Region<input id="communityRegion" value="${esc(loc.region||'')}" placeholder="ON"></label><label>Country<input id="communityCountry" value="${esc(loc.country||'')}" placeholder="Canada"></label></div><label>Bio</label><textarea id="communityBio">${esc(c.user.bio||'')}</textarea><section class="inner-card"><h3>Equipment Shared on Profile</h3><p>${esc(equipment.machine||'Machine not set')}</p><p>${esc((equipment.grinders||[]).map(g=>[g.name||g.model,g.burrType==='Other'?g.burrOther:g.burrType,g.profile].filter(Boolean).join(' / ')).join(', ')||'Grinder not set')}</p><button class="btn secondary full" onclick="editProfile()">Edit Equipment</button></section><button class="btn full" onclick="saveCommunitySettings()">Save Profile</button></section><section class="card"><h2>Backend Tracking</h2><label>Backend API URL</label><input id="apiBase" placeholder="http://localhost:8787" value="${esc(c.sync.apiBase||'')}"><div class="tile ${c.sync.enabled?'selected':''}" onclick="toggleBackendSync()"><b>User data, follow, rating, and recipe sync</b><p>${c.sync.enabled?'Enabled':'Disabled'} · Last sync: ${last}</p></div>${c.sync.lastError?`<p class="error">${esc(c.sync.lastError)}</p>`:''}<button class="btn full" onclick="syncCommunity()">Sync Now</button></section><section class="card"><h2>Settings</h2><button class="btn full secondary" onclick="go('maintenance')">Maintenance Tracker</button><div class="tile ${state.settings.haptics!==false?'selected':''}" onclick="toggleHaptics()"><b>Haptic feedback</b><p>${state.settings.haptics!==false?'Enabled':'Disabled'} for timer taps, grinder dial scrolling, and most buttons</p></div><div class="tile ${state.settings.rateReminder?'selected':''}" onclick="state.settings.rateReminder=!state.settings.rateReminder;render()"><b>Ask me to rate my brew later</b><p>${state.settings.rateReminder?'Enabled':'Disabled'}</p></div><label>Rating reminder delay</label><select onchange="state.settings.rateDelay=this.value;save()"><option value="5" ${state.settings.rateDelay==5?'selected':''}>5 minutes</option><option value="10" ${state.settings.rateDelay==10?'selected':''}>10 minutes</option></select></section><section class="card"><h2>Data</h2><button class="btn full secondary" onclick="exportData()">Export Backup</button><button class="btn full secondary" onclick="document.getElementById('importBackup').click()">Import Backup</button><input type="file" id="importBackup" accept="application/json" hidden onchange="importData(event)"><button class="btn full secondary" onclick="localStorage.removeItem(KEY);location.reload()">Reset Demo Data</button></section>`;
+}
+function installPressHaptics(){
+ if(window.__brewHapticsInstalled)return; window.__brewHapticsInstalled=true;
+ document.addEventListener('pointerdown',e=>{
+  if(e.target.closest('input,select,textarea,[data-no-haptic]'))return;
+  if(e.target.closest('button,.tile,.recipe-option,.saved-profiles button,.mini-brews button,.nav button'))h(8);
+ },{passive:true});
+}
+installPressHaptics();
+function logNotesSection(method){return `<section class="inner-card brew-notes-section"><h3>Brew Notes</h3><p>Add anything you want to remember about this ${esc(method)} brew.</p><textarea id="notes" placeholder="What changed, what worked, drawdown, aroma, taste notes, next adjustment..."></textarea></section>`}
+function logView(pref={}){
+ let b=bean(pref.beanId)||currentBean(); let m=pref.method||selectedMethod||'Espresso'; let p=pref.profileId?activeProfile(b,m):activeProfile(b,m); let temp=tempVal(p,m), gId=p?.grinderId||lastBrew(b?.id,m)?.grinderId||profileData().grinders[0]?.id;
+ const isEsp=m==='Espresso', isPour=m==='Pour Over';
+ return `<section class="card"><h2>Log Brew</h2><div class="seg"><button class="sel">Existing Bean</button><button onclick="openBeanForm()">New Bean</button></div><label>Bean</label><select id="logBean" onchange="state.currentBeanId=this.value;render()">${state.beans.filter(x=>x.status==='current').map(x=>`<option value="${x.id}" ${x.id===b?.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><label>Brew Method</label>${methodSelector(m,'log','')}${settingBlock(p?.grind||lastBrew(b?.id,m)?.grind||18.6,gId)}<div class="metric-grid"><label>Dose<input id="dose" type="number" step="0.1" value="${p?.dose||18}"></label>${isEsp?`<label>Yield<input id="yieldOut" type="number" step="0.1" value="${p?.yieldOut||36}"></label>`:`<label>Water<input id="water" type="number" step="1" value="${p?.water||320}"></label>`}</div><label>Temperature</label><input id="temp" type="number" step="1" value="${temp}">${isPour?pourControls(p,b):timerBlock(m)}${ratingBlock(7.5)}<label>Flavour Description</label><div class="select-grid">${flavourButtons()}</div>${logNotesSection(m)}<button class="btn full" onclick="saveBrew('${b?.id||''}','${m}')">Save Brew</button><button class="btn secondary full" onclick="saveDialedProfile('${b?.id||''}','${m}')">Save Dialed-In Profile</button></section>`;
+}
+function photoInput(){
+ let input=document.getElementById('beanPhotoInput');
+ if(!input){
+  input=document.createElement('input');
+  input.type='file';
+  input.id='beanPhotoInput';
+  input.accept='image/*';
+  input.setAttribute('capture','environment');
+  input.hidden=true;
+  document.body.appendChild(input);
+ }
+ return input;
+}
+function pickPhoto(id){
+ const input=photoInput();
+ input.value='';
+ input.dataset.beanId=id;
+ input.onchange=e=>loadPhoto(e,id);
+ input.click();
+}
+function loadPhoto(e,id){
+ let f=e.target.files&&e.target.files[0]; if(!f)return;
+ let r=new FileReader();
+ r.onload=()=>{
+  if(id==='new'){
+   window.tempPhoto=r.result;
+   const btn=document.querySelector('.modal .bag.large');
+   if(btn){btn.classList.add('has-photo');btn.innerHTML=`<img src="${r.result}"><em>${icon('camera')}</em>`}
+   toast('Bean photo ready');
+   return;
+  }
+  let b=bean(id); if(!b)return;
+  b.photo=r.result;
+  save();
+  toast('Bean photo saved');
+  if(document.getElementById('modal')){closeModal();openBeanDetail(id)}
+  else render();
+ };
+ r.readAsDataURL(f);
+}
+
+/* v19 grinder metadata, profile-driven brew methods, recipes, and pour-over validation */
+const grinderManufacturers=['DF Grinders','Niche','Fellow','Baratza','Eureka','Mazzer','Mahlkonig','Lagom','Option-O','Weber Workshops','Comandante','1Zpresso','Timemore','Kingrinder','Varia','Ceado'];
+function normalizeGrinder(g={}){return {id:g.id||uid(),name:g.name||g.manufacturer||'DF Grinders',model:g.model||'DF64',burrType:g.burrType||'Stainless Steel',burrOther:g.burrOther||'',profile:g.profile||'Multipurpose (espresso)'}}
+function grinderManufacturer(g){return g?.name||g?.manufacturer||'DF Grinders'}
+function grinderModel(g){return g?.model||'DF Grinder'}
+function grinderSubline(g){return [grinderModel(g),g?.burrType==='Other'?g.burrOther:g?.burrType,g?.profile].filter(Boolean).join(' • ')}
+function profileData(){
+ const p=state.userProfile||{}, e=p.equipment||{}, machine=p.machine||{}, otherBrews=Array.isArray(p.otherBrews)?p.otherBrews:(p.otherBrew?[p.otherBrew]:[]), flavour=p.flavour||{};
+ const brew=(p.brew&&p.brew.length?p.brew:['Espresso']).filter(Boolean);
+ return {brew,defaultMethod:p.defaultMethod||brew.find(m=>m!=='Other')||otherBrews[0]||brew[0]||'Espresso',otherBrews,machine:{manufacturer:machine.manufacturer||e.espresso?.manufacturer||'',model:machine.model||e.espresso?.model||''},grinders:(p.grinders&&p.grinders.length?p.grinders:[{}]).map(normalizeGrinder),equipment:{espresso:{manufacturer:e.espresso?.manufacturer||machine.manufacturer||'',model:e.espresso?.model||machine.model||''},pourOver:{brewerType:e.pourOver?.brewerType||'',style:e.pourOver?.style||'conical',styleOther:e.pourOver?.styleOther||''},aeroPress:{brewerType:e.aeroPress?.brewerType||'AeroPress'},frenchPress:{brewerType:e.frenchPress?.brewerType||'French press'},mokaPot:{brand:e.mokaPot?.brand||'',size:e.mokaPot?.size||''}},flavour:{roast:flavour.roast??52,notes:flavour.notes||[],customNotes:flavour.customNotes||[]},workflow:p.workflow||[]};
+}
+function profileBrewOptions(){
+ const p=profileData(), built=p.brew.filter(m=>m!=='Other'), customs=p.brew.includes('Other')?p.otherBrews:[];
+ return [...new Set([...built,...customs])].filter(Boolean);
+}
+function baseMethod(m){return brewMethods.includes(m)?m:'Other'}
+function methodLabel(m){return m==='Other'?(profileData().otherBrews.join(', ')||'Other'):m}
+function grinderName(g){return [grinderManufacturer(g),grinderModel(g)].filter(Boolean).join(' - ')}
+function profileCard(){
+ const p=profileData(), flavours=[...(p.flavour.notes||[]),...(p.flavour.customNotes||[])], equipment=(p.brew||[]).filter(m=>m!=='Other').map(m=>`${m}: ${methodEquipment(m).value}`).concat(p.brew.includes('Other')?p.otherBrews.map(x=>`Other: ${x}`):[]);
+ return `<section class="card profile-card"><button class="edit-icon" onclick="editProfile()">${icon('pencil')}</button><h2>Profile</h2><div class="method-row">${profileBrewOptions().map(m=>`<span title="${esc(m)}">${brewSvg(baseMethod(m))}</span>`).join('')}</div><div class="detail compact"><div><span>Grinders</span>${esc(p.grinders.map(g=>`${grinderManufacturer(g)} - ${grinderModel(g)}`).join(', ')||'Not set')}</div><div><span>Equipment</span>${esc(equipment.join(' · ')||'Not set')}</div><div><span>Preference</span>${p.flavour.roast<35?'Darker':p.flavour.roast>65?'Lighter':'Medium'} • ${esc(flavours.join(', ')||'Not set')}</div><div><span>Default</span>${esc(p.defaultMethod||'Not set')}</div></div></section>`;
+}
+function grinderEditor(g,i){g=normalizeGrinder(g);return `<section class="inner-card grinder-form" data-grinder-row data-id="${esc(g.id)}"><h3>${i===0?'Grinder':'Grinder '+(i+1)}</h3><label>Manufacturer</label><input class="g-name" list="grinderManufacturers" value="${esc(grinderManufacturer(g))}" placeholder="DF Grinders"><label>Model</label><input class="g-model" value="${esc(grinderModel(g))}" placeholder="DF64"><label>Burr Type</label><select class="g-burr" onchange="this.closest('[data-grinder-row]').querySelector('.g-other-wrap').style.display=this.value==='Other'?'block':'none'"><option ${g.burrType==='Red Titanium'?'selected':''}>Red Titanium</option><option ${g.burrType==='Stainless Steel'?'selected':''}>Stainless Steel</option><option ${g.burrType==='Other'?'selected':''}>Other</option></select><div class="g-other-wrap" style="display:${g.burrType==='Other'?'block':'none'}"><label>Other Burr</label><input class="g-other" value="${esc(g.burrOther||'')}"></div><label>Burr Profile</label><select class="g-profile"><option ${g.profile==='Brew'?'selected':''}>Brew</option><option ${g.profile==='Multipurpose (espresso)'?'selected':''}>Multipurpose (espresso)</option></select>${i?`<button class="btn danger full" type="button" onclick="this.closest('[data-grinder-row]').remove()">Remove Grinder</button>`:''}</section>`}
+function addGrinderField(){let g={id:uid(),name:'DF Grinders',model:'DF64',burrType:'Stainless Steel',burrOther:'',profile:'Multipurpose (espresso)'}; $('#grinderList').insertAdjacentHTML('beforeend',grinderEditor(g,$$('[data-grinder-row]').length))}
+function setDefaultMethod(method){state.userProfile.defaultMethod=method; $$('.default-star').forEach(b=>b.classList.toggle('selected',b.dataset.defaultMethod===method)); $('#defaultMethodNote').textContent=`Default brew method: ${method}`}
+function methodTile(m,selected,def){return `<button type="button" class="tile method ${selected.has(m)?'selected':''}" data-brew="${m}" onclick="toggleProfileMethod(this)"><span class="default-star ${def===m?'selected':''}" data-default-method="${m}" onclick="event.stopPropagation();setDefaultMethod('${m}')">★</span>${brewSvg(m)}<em>${m}</em></button>`}
+function editProfile(){
+ const p=profileData(), selected=new Set(p.brew||[]), flavourSet=new Set(p.flavour.notes||[]), def=p.defaultMethod||'Espresso';
+ modal(`<h2>Edit Profile</h2><datalist id="grinderManufacturers">${grinderManufacturers.map(x=>`<option value="${esc(x)}"></option>`).join('')}</datalist><h3>Brew Methods</h3><div class="method-grid profile-method-grid">${brewMethods.map(x=>methodTile(x,selected,def)).join('')}</div><p class="muted" id="defaultMethodNote">Tap the star to set the default brew method. Default brew method: ${esc(def)}</p><div id="otherBrewWrap" style="display:${selected.has('Other')?'block':'none'}"><label>Other Brew Methods</label><div id="otherBrewList">${(p.otherBrews.length?p.otherBrews:['']).map(x=>`<div class="field-action"><input class="other-brew-input" value="${esc(x)}" placeholder="Siphon, Cold Brew, Clever Dripper..."><button type="button" onclick="this.parentElement.remove();syncProfileEquipmentVisibility()">×</button></div>`).join('')}</div><button class="btn secondary full" type="button" onclick="addOtherBrewField()">+ Add Other Brew Method</button></div><h3 class="section-gap">Equipment</h3><div id="grinderList">${p.grinders.map(grinderEditor).join('')}</div><button class="btn secondary full" type="button" onclick="addGrinderField()">+ Add Grinder</button><section class="inner-card equipment-fields" data-equip-for="Espresso"><h3>Espresso Machine</h3><label>Manufacturer</label><input id="pmake" value="${esc(p.equipment.espresso.manufacturer)}"><label>Model</label><input id="pmodel" value="${esc(p.equipment.espresso.model)}"></section><section class="inner-card equipment-fields" data-equip-for="Pour Over"><h3>Pour Over Brewer</h3><label>Brewer Type</label><input id="pourType" value="${esc(p.equipment.pourOver.brewerType)}" placeholder="V60, Kalita, Origami..."><label>Brewer Style</label><select id="pourStyle" onchange="$('#pourStyleOtherWrap').style.display=this.value==='other'?'block':'none'"><option value="conical" ${p.equipment.pourOver.style==='conical'?'selected':''}>Conical</option><option value="flat bottom" ${p.equipment.pourOver.style==='flat bottom'?'selected':''}>Flat bottom</option><option value="other" ${p.equipment.pourOver.style==='other'?'selected':''}>Other</option></select><div id="pourStyleOtherWrap" style="display:${p.equipment.pourOver.style==='other'?'block':'none'}"><label>Other Style</label><input id="pourStyleOther" value="${esc(p.equipment.pourOver.styleOther)}"></div></section><section class="inner-card equipment-fields" data-equip-for="AeroPress"><h3>AeroPress</h3><label>Brewer Type</label><input id="aeroType" value="${esc(p.equipment.aeroPress.brewerType||'AeroPress')}"></section><section class="inner-card equipment-fields" data-equip-for="French Press"><h3>French Press</h3><label>Brewer Type</label><input id="frenchType" value="${esc(p.equipment.frenchPress.brewerType||'French press')}"></section><section class="inner-card equipment-fields" data-equip-for="Moka Pot"><h3>Moka Pot</h3><label>Brand</label><input id="mokaBrand" value="${esc(p.equipment.mokaPot.brand)}"><label>Size</label><input id="mokaSize" value="${esc(p.equipment.mokaPot.size)}" placeholder="3 cup, 6 cup..."></section><section class="inner-card equipment-fields" data-equip-for="Other"><h3>Other Brewer</h3><label>Specified Brewer</label><div id="otherBrewerPreview"></div></section><label>Roast Preference</label><div class="roast-pref"><span>Light</span><span>Dark</span></div><input id="roastpref" class="roast-slider" type="range" min="0" max="100" value="${p.flavour.roast}"><label>Flavour Preferences</label><div class="select-grid">${flavourTags.map(x=>`<button type="button" class="tile ${flavourSet.has(x)?'selected':''}" data-pref="${x}" onclick="this.classList.toggle('selected')">${x}</button>`).join('')}<button type="button" class="tile ${p.flavour.customNotes.length?'selected':''}" id="otherFlavorBtn" onclick="toggleOtherFlavor(this)">Other</button></div><div id="customFlavorWrap" style="display:${p.flavour.customNotes.length?'block':'none'}"><label>Other Flavour Descriptions</label><div id="customFlavorList">${(p.flavour.customNotes.length?p.flavour.customNotes:['']).map(x=>`<div class="field-action"><input class="custom-flavor-input" value="${esc(x)}" placeholder="Custom flavour"><button type="button" onclick="this.parentElement.remove()">×</button></div>`).join('')}</div><button class="btn secondary full" type="button" onclick="addCustomFlavorField()">+ Add Flavour</button></div><label>Workflow</label><div class="select-grid">${['Blind shaking','WDT','RDT','Slow feed','Distributor tool','Pre-Infusion'].map(x=>`<button type="button" class="tile ${(p.workflow||[]).includes(x)?'selected':''}" data-work="${x}" onclick="this.classList.toggle('selected')">${x}</button>`).join('')}</div><div class="action-gap"><button class="btn full" onclick="saveProfile()">Save Profile</button></div>`);
+ syncProfileEquipmentVisibility();
+}
+function saveProfile(){
+ const brew=$$('[data-brew].selected').map(x=>x.dataset.brew), otherBrews=$$('.other-brew-input').map(x=>x.value.trim()).filter(Boolean), currentDefault=state.userProfile.defaultMethod||brew[0]||otherBrews[0]||'Espresso';
+ const methodChoices=[...brew.filter(m=>m!=='Other'),...(brew.includes('Other')?otherBrews:[])], defaultMethod=methodChoices.includes(currentDefault)?currentDefault:(methodChoices[0]||'Espresso');
+ const grinders=$$('[data-grinder-row]').map(row=>({id:row.dataset.id||uid(),name:$('.g-name',row).value||'DF Grinders',model:$('.g-model',row).value||'DF64',burrType:$('.g-burr',row).value,burrOther:$('.g-burr',row).value==='Other'?$('.g-other',row).value:'',profile:$('.g-profile',row).value}));
+ const customNotes=$$('.custom-flavor-input').map(x=>x.value.trim()).filter(Boolean), equipment={espresso:{manufacturer:$('#pmake')?.value||'',model:$('#pmodel')?.value||''},pourOver:{brewerType:$('#pourType')?.value||'',style:$('#pourStyle')?.value||'conical',styleOther:$('#pourStyleOther')?.value||''},aeroPress:{brewerType:$('#aeroType')?.value||'AeroPress'},frenchPress:{brewerType:$('#frenchType')?.value||'French press'},mokaPot:{brand:$('#mokaBrand')?.value||'',size:$('#mokaSize')?.value||''}};
+ state.userProfile={...state.userProfile,brew,defaultMethod,machine:{manufacturer:equipment.espresso.manufacturer,model:equipment.espresso.model},equipment,grinders:grinders.length?grinders:profileData().grinders,flavour:{roast:+$('#roastpref').value,notes:$$('[data-pref].selected').map(x=>x.dataset.pref),customNotes},workflow:$$('[data-work].selected').map(x=>x.dataset.work),otherBrews,otherBrew:otherBrews[0]||''};
+ if(state.community?.user)state.community.user.equipment=profileEquipment();
+ closeModal(); render();
+}
+function go(v){stopTimer(false); if(v==='log')selectedMethod=profileData().defaultMethod||profileBrewOptions()[0]||'Espresso'; view=v; render()}
+function methodButton(method,sel,context,beanId=''){return `<button class="${sel===method?'sel':''}" onclick="selectBrewMethod('${method}','${context}','${beanId}')">${brewSvg(baseMethod(method))}<small>${esc(method)}</small></button>`}
+function methodSelector(sel,context='bean',beanId=''){
+ const methods=context==='log'?profileBrewOptions():[...new Set([...brewMethods,...Object.keys(bean(beanId)?.brewProfiles||{})])].filter(Boolean);
+ const primary=methods.slice(0,3), extras=methods.slice(3), moreSel=extras.includes(sel);
+ return `<div class="brew-tabs">${primary.map(m=>methodButton(m,sel,context,beanId)).join('')}${extras.length?`<button class="${moreSel?'sel':''}" type="button">${brewSvg('More')}<small>More</small></button>`:''}</div>${extras.length?`<div class="brew-tabs method-extra-tabs">${extras.map(m=>methodButton(m,sel,context,beanId)).join('')}</div>`:''}`;
+}
+function selectBrewMethod(m,context='bean',beanId=''){selectedMethod=m;if(context==='bean'){closeModal();openBeanDetail(beanId,true)}else render()}
+function settingBlock(v,selectedGrinderId=''){
+ const grinders=profileData().grinders, selected=selectedGrinderId||grinders[0]?.id||'';
+ const options=grinders.map(g=>`<option value="${g.id}" ${g.id===selected?'selected':''}>${esc(grinderModel(g))}</option>`).join('');
+ return `<div class="setting-card"><div><label>Grinder</label><select id="logGrinder">${options}</select></div><label class="setting-num">Grind Setting<input id="grind" type="number" inputmode="decimal" step="0.1" value="${(+v||0).toFixed(1)}" onchange="syncRuler(+this.value)"></label><div class="ruler" id="ruler"><div class="track" id="track"></div><div class="center-line"></div></div></div>`;
+}
+function methodEquipmentCards(method,g){
+ const m=methodEquipment(baseMethod(method));
+ return `<div class="grinder-equipment-card">${equipSvg('grinder')}<b>${esc(grinderManufacturer(g))}</b><small>${esc(grinderSubline(g)||'Grinder')}</small></div><div>${equipSvg(baseMethod(method)==='Espresso'?'machine':'grinder')}<b>${esc(m.value)}</b><small>${esc(m.title)}</small></div>`;
+}
+function stageSeconds(row){return (+$('.stage-min',row).value||0)*60+(+$('.stage-sec',row).value||0)}
+function setStageSeconds(row,seconds){$('.stage-min',row).value=Math.floor(seconds/60);$('.stage-sec',row).value=String(seconds%60).padStart(2,'0')}
+function syncFinalPourWeight(){let rows=$$('[data-stage-row]'), final=rows[rows.length-1], water=$('#water'); if(final&&water)$('.stage-weight',final).value=water.value||0}
+function syncWaterFromFinal(){let rows=$$('[data-stage-row]'), final=rows[rows.length-1], water=$('#water'); if(final&&water)water.value=$('.stage-weight',final).value||0}
+function validatePourStages(changed){
+ const rows=$$('[data-stage-row]'); let lastT=0,lastW=0;
+ rows.forEach((r,i)=>{let t=stageSeconds(r), w=+$('.stage-weight',r).value||0; if(i&&t<=lastT)t=lastT+1; if(i&&w<=lastW)w=lastW+1; setStageSeconds(r,t); $('.stage-weight',r).value=w; lastT=t; lastW=w});
+ if(changed?.classList?.contains('stage-weight')&&changed.closest('[data-stage-row]')===rows[rows.length-1])syncWaterFromFinal();
+}
+function renderPourStages(stages){
+ const rows=normalizePourStages(stages);
+ return `<div class="stage-table"><div class="stage-head"><span>Recipe Stage</span><span>Time (m:ss)</span><span>Weight (g)</span><span></span></div>${rows.map((s,i)=>`<div class="stage-row fixed-stage" data-stage-row><span class="stage-label">${esc(s.name)}</span><input class="stage-name" type="hidden" value="${esc(s.name)}"><div class="time-pair"><input class="stage-min" type="number" inputmode="numeric" min="0" step="1" value="${Math.floor((+s.time||0)/60)}" oninput="validatePourStages(this)"><span>:</span><input class="stage-sec" type="number" inputmode="numeric" min="0" max="59" step="1" value="${String((+s.time||0)%60).padStart(2,'0')}" oninput="validatePourStages(this)"></div><input class="stage-weight" type="number" inputmode="numeric" min="0" step="1" value="${s.weight}" oninput="validatePourStages(this)">${s.name!=='Bloom'&&s.name!=='Final Pour'?`<button type="button" onclick="removePourStage(this)">×</button>`:'<span></span>'}</div>`).join('')}</div>`;
+}
+function collectStages(){return normalizePourStages($$('[data-stage-row]').map(r=>({name:$('.stage-name',r).value,time:stageSeconds(r),weight:+$('.stage-weight',r).value})))}
+function addPourStage(){
+ let rows=$$('[data-stage-row]'), final=rows[rows.length-1], prev=rows[rows.length-2]||rows[0], time=stageSeconds(prev)+40, weight=(+$('.stage-weight',prev)?.value||60)+80, nextNum=Math.max(1,...rows.map(r=>+($('.stage-name',r).value.match(/^Pour (\d+)$/)?.[1]||0)))+1;
+ final.insertAdjacentHTML('beforebegin',`<div class="stage-row fixed-stage" data-stage-row><span class="stage-label">Pour ${nextNum}</span><input class="stage-name" type="hidden" value="Pour ${nextNum}"><div class="time-pair"><input class="stage-min" type="number" inputmode="numeric" min="0" step="1" value="${Math.floor(time/60)}" oninput="validatePourStages(this)"><span>:</span><input class="stage-sec" type="number" inputmode="numeric" min="0" max="59" step="1" value="${String(time%60).padStart(2,'0')}" oninput="validatePourStages(this)"></div><input class="stage-weight" type="number" inputmode="numeric" min="0" step="1" value="${weight}" oninput="validatePourStages(this)"><button type="button" onclick="removePourStage(this)">×</button></div>`);
+ renumberPourStageRows();validatePourStages();
+}
+function pourControls(p,b){
+ const stages=normalizePourStages(p?.stages||defaultPourStages());
+ return `<div class="seg"><button class="sel" id="recipeCreateBtn" onclick="setPourFlow('create')" type="button">Recipe Creation</button><button id="recipeFindBtn" onclick="setPourFlow('find')" type="button">Find Existing Recipe</button></div><div id="pourRecipeCreation"><label>Recipe Stages</label><div id="pourStages">${renderPourStages(stages)}</div><button class="btn secondary full" onclick="addPourStage()" type="button">Add Pour</button><button class="btn full" onclick="showPourInstructions()" type="button">Start Focused Brew</button></div><div id="pourFindRecipe" style="display:none"><label>Saved Pour Over Recipes</label><div class="recipe-options">${pourRecipeOptions(b?.id)}</div></div><input id="manualTime" type="hidden" value="${p?.totalTime||stages[stages.length-1]?.time||0}"><input id="bloom" type="hidden" value="${stages[0]?.time||45}">`;
+}
+function logView(pref={}){
+ let b=bean(pref.beanId)||currentBean(), options=profileBrewOptions(); if(!options.includes(selectedMethod))selectedMethod=profileData().defaultMethod||options[0]||'Espresso';
+ let m=pref.method||selectedMethod||'Espresso', bm=baseMethod(m), p=pref.profileId?activeProfile(b,m):activeProfile(b,m), temp=tempVal(p,bm), gId=p?.grinderId||lastBrew(b?.id,m)?.grinderId||profileData().grinders[0]?.id;
+ const isEsp=bm==='Espresso', isPour=bm==='Pour Over';
+ return `<section class="card"><h2>Log Brew</h2><div class="seg"><button class="sel">Existing Bean</button><button onclick="openBeanForm()">New Bean</button></div><label>Bean</label><select id="logBean" onchange="state.currentBeanId=this.value;render()">${state.beans.filter(x=>x.status==='current').map(x=>`<option value="${x.id}" ${x.id===b?.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><label>Brew Method</label>${methodSelector(m,'log','')}${settingBlock(p?.grind||lastBrew(b?.id,m)?.grind||18.6,gId)}<div class="metric-grid"><label>Dose (g)<input id="dose" type="number" inputmode="decimal" step="0.1" value="${p?.dose||18}"></label>${isEsp?`<label>Yield (g)<input id="yieldOut" type="number" inputmode="decimal" step="0.1" value="${p?.yieldOut||36}"></label>`:`<label>Water (g)<input id="water" type="number" inputmode="numeric" step="1" value="${p?.water||320}" oninput="syncFinalPourWeight()"></label>`}</div><label>Temperature</label><input id="temp" type="number" inputmode="numeric" step="1" value="${temp}">${isPour?pourControls(p,b):timerBlock(bm)}${ratingBlock(7.5)}<label>Flavour Description</label><div class="select-grid">${flavourButtons()}</div>${logNotesSection(m)}<button class="btn full" onclick="saveBrew('${b?.id||''}','${m}')">Save Brew</button><button class="btn secondary full" onclick="saveDialedProfile('${b?.id||''}','${m}')">Save Dialed-In Profile</button></section>`;
+}
+function recipeSearchText(r){
+ const g=grinder(r.grinderId), p=r.params||{};
+ return [r.title,r.ownerName,r.ownerHandle,r.method,r.beanName,r.roaster,r.origin,r.process,r.roastLevel,(r.tags||[]).join(' '),r.notes,grinderManufacturer(g),grinderModel(g),g?.burrType,g?.profile,p.grind,p.dose,p.water,p.yieldOut].join(' ').toLowerCase();
+}
+function recipeResults(){
+ ensureCommunity(state); const c=state.community, q=recipeQuery.trim().toLowerCase(), grinderFilter=window.recipeGrinder||'All';
+ let list=c.recipes.filter(r=>{const mine=r.ownerId===c.user.id,saved=c.savedRecipeIds.includes(r.id),following=c.follows.includes(r.ownerId),g=grinder(r.grinderId||r.params?.grinderId); if(recipeTab==='library'&&!(mine||saved))return false; if(recipeTab==='discover'&&(mine||r.visibility!=='public'))return false; if(recipeTab==='following'&&!(following&&r.visibility==='public'))return false; if(recipeMethod!=='All'&&r.method!==recipeMethod)return false; if(recipeRoast!=='All'&&r.roastLevel!==recipeRoast)return false; if(grinderFilter!=='All'&&g?.id!==grinderFilter)return false; if(q&&!recipeSearchText(r).includes(q))return false; return true});
+ return list.sort((a,b)=>recipeMatchPrefs?recipeMatchScore(b)-recipeMatchScore(a)||new Date(b.updatedAt)-new Date(a.updatedAt):new Date(b.updatedAt)-new Date(a.updatedAt));
+}
+function recipesView(){
+ ensureCommunity(state); const c=state.community, count=recipeResults().length, grinders=profileData().grinders;
+ return `<section class="card recipes-head"><h2>Recipes</h2><p>Build your library from dialed-in profiles, save recipes from other users, and rank discovery by your roast and taste preferences.</p><div class="tabs recipe-tabs"><button class="${recipeTab==='library'?'sel':''}" onclick="recipeTab='library';render()">My Library</button><button class="${recipeTab==='discover'?'sel':''}" onclick="recipeTab='discover';render()">Discover</button><button class="${recipeTab==='following'?'sel':''}" onclick="recipeTab='following';render()">Following</button></div><input id="recipeSearch" placeholder="Search recipes, users, beans, grinder, brew type, or flavors" value="${esc(recipeQuery)}" oninput="recipeQuery=this.value;drawRecipeList()"><div class="filter-row"><select onchange="recipeMethod=this.value;render()"><option ${recipeMethod==='All'?'selected':''}>All</option>${brewMethods.map(m=>`<option ${recipeMethod===m?'selected':''}>${m}</option>`).join('')}</select><select onchange="window.recipeGrinder=this.value;render()"><option value="All" ${(window.recipeGrinder||'All')==='All'?'selected':''}>All Grinders</option>${grinders.map(g=>`<option value="${g.id}" ${(window.recipeGrinder||'All')===g.id?'selected':''}>${esc(grinderModel(g))}</option>`).join('')}</select></div><div class="filter-row"><select onchange="recipeRoast=this.value;render()"><option ${recipeRoast==='All'?'selected':''}>All Roasts</option>${['Light','Medium','Dark'].map(r=>`<option ${recipeRoast===r?'selected':''}>${r}</option>`).join('')}</select><button class="btn secondary ${recipeMatchPrefs?'selected-filter':''}" onclick="recipeMatchPrefs=!recipeMatchPrefs;render()">Taste match ${recipeMatchPrefs?'on':'off'}</button></div><button class="btn full" onclick="openRecipeForm()">Create Recipe</button><button class="btn secondary full" onclick="openRecipeBasisPicker()">Create From Dialed-In Bean</button><div class="muted count-line"><span id="recipeCount">${count}</span> recipes shown · @${esc(c.user.handle)}</div></section><section class="card recipe-list-card"><div id="recipeList">${recipeResults().map(recipeCard).join('')||'<p>No matching recipes yet.</p>'}</div></section>`;
+}
+function recipeFromProfile(beanId,m,pid){let b=bean(beanId), p=(b?.brewProfiles?.[m]||[]).find(x=>x.id===pid); if(!b||!p)return null; let r=profileToRecipe(b,m,p,state.community); r.id='recipe-'+profileRecipeId(b,m,p); r.title=`${b.name} ${m} Recipe`; r.visibility='private'; r.grinderId=p.grinderId; r.params={...r.params,grinderId:p.grinderId}; r.additionalInfo={beanId,profileId:pid,roaster:b.roaster,process:b.process,roastDate:b.roastDate}; return r}
+function convertProfileToRecipe(beanId,m,pid){ensureCommunity(state); let r=recipeFromProfile(beanId,m,pid); if(!r)return; let old=state.community.recipes.find(x=>x.id===r.id); if(old)Object.assign(old,r,{updatedAt:iso()}); else state.community.recipes.unshift(r); recipeTab='library'; view='recipes'; closeModal(); render(); toast('Recipe created from dialed-in profile')}
+function openRecipeBasisPicker(){let rows=[]; state.beans.forEach(b=>Object.entries(b.brewProfiles||{}).forEach(([m,arr])=>(arr||[]).forEach(p=>rows.push({b,m,p})))); modal(`<h2>Create From Dialed-In Bean</h2><div class="recipe-options">${rows.map(({b,m,p})=>`<button class="recipe-option" onclick="convertProfileToRecipe('${b.id}','${m}','${p.id}')"><b>${esc(b.name)} · ${esc(m)}</b><span>${esc(p.name||'Profile')} · ${p.score||'—'} score</span></button>`).join('')||'<p>No dialed-in profiles yet.</p>'}</div>`)}
+function profileDetail(beanId,m,pid){let b=bean(beanId), p=(b.brewProfiles[m]||[]).find(x=>x.id===pid); modal(`<button class="edit-icon modal-edit" onclick="profileForm('${beanId}','${m}','${pid}')">${icon('pencil')}</button><h2>${esc(p.name)}</h2><div class="hero-detail"><b>${p.score||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Method</span>${esc(m)}</div><div><span>Grind</span>${p.grind}</div><div><span>Dose</span>${p.dose}g</div><div><span>Output</span>${p.yieldOut||p.water||'—'}g</div><div><span>Temperature</span>${tempVal(p,baseMethod(m))}°</div><div><span>Time</span>${fmt(p.time||p.totalTime)}s</div><div><span>Notes</span>${esc(p.notes||'—')}</div></div><button class="btn full" onclick="brewUsingProfile('${beanId}','${m}','${pid}')">Brew Using This Profile</button><button class="btn secondary full" onclick="convertProfileToRecipe('${beanId}','${m}','${pid}')">Convert to Recipe</button>`)}
+function openBeanDetail(id,modalOpen=true){let b=bean(id); if(!b)return; if(!b.brewProfiles)b.brewProfiles={}; if(!b.brewProfiles[selectedMethod])selectedMethod=Object.keys(b.brewProfiles)[0]||'Espresso'; let p=activeProfile(b,selectedMethod), g=grinder(p?.grinderId||b.grinderId), recent=brewsFor(b.id,selectedMethod).slice(0,3); let html=`<button class="back" onclick="closeModal()">${icon('back')}</button><button class="edit-icon modal-edit" onclick="openBeanForm('${b.id}')">${icon('pencil')}</button><div class="bean-hero"><button class="bag large ${b.photo?'has-photo':''}" onclick="pickPhoto('${b.id}')">${b.photo?`<img src="${b.photo}">`:'DF'}<em>${icon('camera')}</em></button><div><h1>${esc(b.name)}</h1><p>${esc([b.process,b.origin].filter(Boolean).join(' • '))}</p><span class="pill green">${b.status==='current'?'Current Bean':'Archived'}</span></div></div><h3>Brew Profiles</h3>${methodTabs(b,selectedMethod)}${profilePanel(b,selectedMethod,p,g)}<section class="inner-card"><h3>Equipment</h3><div class="equipment">${methodEquipmentCards(selectedMethod,g)}</div></section><section class="inner-card"><h3>Last 3 Brews <button onclick="showBeanHistory('${b.id}','${selectedMethod}')">View All (20)</button></h3><div class="mini-brews">${recent.map(x=>`<button onclick="brewDetail('${x.id}')"><small>${dateShort(x.createdAt)}</small><b>${x.rating||'—'}</b><span>${fmt(x.time||x.totalTime)}s</span></button>`).join('')||'<p>No brews yet.</p>'}</div></section><section class="inner-card"><h3>Saved Profiles (${selectedMethod}) <button onclick="manageProfiles('${b.id}','${selectedMethod}')">Manage</button></h3><div class="saved-profiles">${(b.brewProfiles[selectedMethod]||[]).map(pr=>`<button class="${pr.active?'sel':''}" onclick="profileDetail('${b.id}','${selectedMethod}','${pr.id}')"><b>${esc(pr.name)}</b><small>${dateShort(pr.createdAt)} · ${pr.score||'—'} Score</small></button>`).join('')}<button class="add" onclick="profileForm('${b.id}','${selectedMethod}')">+<small>Add New</small></button></div></section>`; if(modalOpen)modal(html); else {$('.modal').innerHTML=`<div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}`;bind();}}
+function equipmentChevron(){return `<svg class="equipment-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>`}
+function grinderBurrSvg(){return `<svg class="equipment-method-icon grinder-burr-icon" viewBox="0 0 64 64"><circle cx="32" cy="32" r="25"/><circle cx="32" cy="32" r="11"/><path d="M32 7v14M32 43v14M7 32h14M43 32h14M14.3 14.3l10 10M39.7 39.7l10 10M49.7 14.3l-10 10M24.3 39.7l-10 10M22.5 9.2l4.8 13M36.7 41.8l4.8 13M54.8 22.5l-13 4.8M22.2 36.7l-13 4.8M41.5 9.2l-4.8 13M27.3 41.8l-4.8 13M54.8 41.5l-13-4.8M22.2 27.3l-13-4.8"/></svg>`}
+function espressoPortafilterSvg(){return `<svg class="equipment-method-icon portafilter-icon" viewBox="0 0 64 64"><path d="M8 25c0-5 8-9 18-9s18 4 18 9-8 9-18 9S8 30 8 25z"/><path d="M11 25c0 3 7 6 15 6s15-3 15-6M18 34v9a7 7 0 0 0 14 0v-9M33 29h13l13 4v8l-25-3M12 28l3 15M41 22h6"/></svg>`}
+function equipmentMethodSvg(method){
+ const bm=baseMethod(method);
+ if(bm==='Espresso')return espressoPortafilterSvg();
+ if(bm==='Other')return brewSvg('Other');
+ return brewSvg(bm);
+}
+function equipmentRow(iconHtml,title,subtitle,onclick=''){
+ return `<button class="equipment-row" type="button" ${onclick?`onclick="${onclick}"`:''}>${iconHtml}<span class="equipment-copy"><b>${esc(title)}</b><small>${esc(subtitle||'Not set')}</small></span>${equipmentChevron()}</button>`;
+}
+function methodEquipmentCards(method,g){
+ const bm=baseMethod(method), m=methodEquipment(bm);
+ const grinderSubtitle=[grinderManufacturer(g),grinderModel(g),g?.burrType==='Other'?g.burrOther:g?.burrType,g?.profile].filter(Boolean).join(' • ');
+ return `<div class="equipment-list">${equipmentRow(grinderBurrSvg(),'Grinder',grinderSubtitle,'editProfile()')}${equipmentRow(equipmentMethodSvg(bm),m.title,m.value,'editProfile()')}</div>`;
+}
+function brewSvg(m){
+ const paths={
+  Espresso:'M18 29h25v8a12.5 12.5 0 0 1-25 0v-8z M43 31h5a4.5 4.5 0 0 1 0 9h-5 M16 47h30 M24 20v5 M31 18v7 M38 20v5 M23 15h16',
+  'Pour Over':'M19 12h26l-5.5 19h-15L19 12z M23.5 20h17 M26 31h12 M22 48h20 M24.5 42h15 M27 31l-4 11h18l-4-11',
+  AeroPress:'M24 12h16v30H24V12z M21 9h22 M26.5 20h11 M26.5 34h11 M19 47h26 M22 42h20 M31 12v30',
+  'French Press':'M22 15h18v31H22V15z M24 10h14 M31 7v17 M19 50h24 M40 23h5v16h-5 M25 36c4 2.5 10 2.5 14 0',
+  'Moka Pot':'M21 25h22l5 25H16l5-25z M24 25l2.5-15h11L40 25 M20 35h24 M45 32h6 M50 33v12 M27 10h10 M29 18h6',
+  More:'M20 32h.1 M32 32h.1 M44 32h.1',
+  Other:'M20 28h22v9a11 11 0 0 1-22 0v-9z M42 31h5a4 4 0 0 1 0 8h-5 M18 48h27 M25 20v4 M32 18v6 M39 20v4'
+ };
+ return `<svg class="brew-icon" viewBox="0 0 64 64" aria-hidden="true"><path d="${paths[m]||paths.Other}"/></svg>`;
+}
+function profileMetric(iconName,value,label){return `<div class="profile-metric">${smallIcon(iconName)}<b>${esc(value??'—')}</b><span>${esc(label)}</span></div>`}
+function profilePanel(b,m,p,g){
+ if(!p)return `<section class="profile-main"><h3>${esc(m)} —<br>No Profile</h3><button class="btn full" onclick="profileForm('${b.id}','${m}')">Create ${esc(m)} Profile</button></section>`;
+ const bm=baseMethod(m), isEsp=bm==='Espresso', score=+(p.score||0), c=scoreColor(score), t=tempVal(p,bm);
+ const output=isEsp?(p.yieldOut??'—'):(p.water??'—'), time=isEsp?(p.time?fmt(p.time):'—'):(p.totalTime?fmt(p.totalTime):'—');
+ const metrics=[
+  profileMetric('bean',`${p.dose??'—'}g`,'Dose'),
+  profileMetric(isEsp?'ratio':'water',`${output}${output==='—'?'':'g'}`,isEsp?'Yield':'Water'),
+  profileMetric('time',time,'Time'),
+  profileMetric('temp',`${t}°`,'Temperature'),
+  profileMetric('ratio',p.ratio||ratio(p),'Ratio'),
+  profileMetric('bean',b.roaster||'—','Roaster')
+ ].join('');
+ return `<section class="profile-main"><div class="profile-title"><h3>${esc(m)} —<br>Current Profile</h3><span>Dialed In</span></div><div class="profile-circles"><div class="gauge grind"><b>${p.grind??'—'}</b><small>Grind Setting</small><em>${esc(grinderModel(g)||g.name||'—')}</em></div><div class="score-ring" style="--scoreColor:${c}"><b>${score||'—'}</b><small>Taste Score</small></div></div><div class="profile-metric-grid">${metrics}</div><button class="btn full" onclick="brewUsingProfile('${b.id}','${m}','${p.id}')">Brew Using This Profile</button></section>`;
+}
+function openBeanDetail(id,modalOpen=true){
+ let b=bean(id); if(!b)return; if(!b.brewProfiles)b.brewProfiles={}; if(!b.brewProfiles[selectedMethod])selectedMethod=Object.keys(b.brewProfiles)[0]||'Espresso';
+ let p=activeProfile(b,selectedMethod), g=grinder(p?.grinderId||b.grinderId), recent=brewsFor(b.id,selectedMethod).slice(0,3);
+ const savedProfiles=`<section class="inner-card"><h3>Saved Profiles (${selectedMethod}) <button onclick="manageProfiles('${b.id}','${selectedMethod}')">Manage</button></h3><div class="saved-profiles">${(b.brewProfiles[selectedMethod]||[]).map(pr=>`<button class="${pr.active?'sel':''}" onclick="profileDetail('${b.id}','${selectedMethod}','${pr.id}')"><b>${esc(pr.name)}</b><small>${dateShort(pr.createdAt)} · ${pr.score||'—'} Score</small></button>`).join('')}<button class="add" onclick="profileForm('${b.id}','${selectedMethod}')">+<small>Add New</small></button></div></section>`;
+ const equipment=`<section class="inner-card"><h3>Equipment</h3><div class="equipment">${methodEquipmentCards(selectedMethod,g)}</div></section>`;
+ const recentBrews=`<section class="inner-card"><h3>Last 3 Brews <button onclick="showBeanHistory('${b.id}','${selectedMethod}')">View All (20)</button></h3><div class="mini-brews">${recent.map(x=>`<button onclick="brewDetail('${x.id}')"><small>${dateShort(x.createdAt)}</small><b>${x.rating||'—'}</b><span>${fmt(x.time||x.totalTime)}s</span></button>`).join('')||'<p>No brews yet.</p>'}</div></section>`;
+ let html=`<button class="back" onclick="closeModal()">${icon('back')}</button><button class="edit-icon modal-edit" onclick="openBeanForm('${b.id}')">${icon('pencil')}</button><div class="bean-hero"><button class="bag large ${b.photo?'has-photo':''}" onclick="pickPhoto('${b.id}')">${b.photo?`<img src="${b.photo}">`:'DF'}<em>${icon('camera')}</em></button><div><h1>${esc(b.name)}</h1><p>${esc([b.process,b.origin].filter(Boolean).join(' • '))}</p><span class="pill green">${b.status==='current'?'Current Bean':'Archived'}</span></div></div><h3>Brew Profiles</h3>${methodTabs(b,selectedMethod)}${profilePanel(b,selectedMethod,p,g)}${savedProfiles}${equipment}${recentBrews}`;
+ if(modalOpen)modal(html); else {$('.modal').innerHTML=`<div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}`;bind();}
+}
+function normalizeGrinder(g={}){return {id:g.id||uid(),name:g.name||g.manufacturer||g.raw_manufacturer_input||'DF Grinders',model:g.model||g.raw_model_input||'DF64',manufacturer_id:g.manufacturer_id||'',grinder_model_id:g.grinder_model_id||'',raw_manufacturer_input:g.raw_manufacturer_input||'',raw_model_input:g.raw_model_input||'',burrType:g.burrType||'Stainless Steel',burrOther:g.burrOther||'',profile:g.profile||'Multipurpose (espresso)'}}
+function grinderEditor(g,i){g=normalizeGrinder(g);return `<section class="inner-card grinder-form" data-grinder-row data-id="${esc(g.id)}"><h3>${i===0?'Grinder':'Grinder '+(i+1)}</h3><label>Manufacturer</label><div class="autocomplete-wrap"><input class="g-name" value="${esc(grinderManufacturer(g))}" placeholder="DF Grinders" autocomplete="off" data-manufacturer-id="${esc(g.manufacturer_id||'')}" oninput="handleGrinderManufacturerInput(this)"><div class="autocomplete-menu"></div></div><label>Model</label><div class="autocomplete-wrap"><input class="g-model" value="${esc(grinderModel(g))}" placeholder="DF64" autocomplete="off" data-model-id="${esc(g.grinder_model_id||'')}" oninput="handleGrinderModelInput(this)"><div class="autocomplete-menu"></div></div><label>Burr Type</label><select class="g-burr" onchange="this.closest('[data-grinder-row]').querySelector('.g-other-wrap').style.display=this.value==='Other'?'block':'none'"><option ${g.burrType==='Red Titanium'?'selected':''}>Red Titanium</option><option ${g.burrType==='Stainless Steel'?'selected':''}>Stainless Steel</option><option ${g.burrType==='Other'?'selected':''}>Other</option></select><div class="g-other-wrap" style="display:${g.burrType==='Other'?'block':'none'}"><label>Other Burr</label><input class="g-other" value="${esc(g.burrOther||'')}"></div><label>Burr Profile</label><select class="g-profile"><option ${g.profile==='Brew'?'selected':''}>Brew</option><option ${g.profile==='Multipurpose (espresso)'?'selected':''}>Multipurpose (espresso)</option></select>${i?`<button class="btn danger full" type="button" onclick="this.closest('[data-grinder-row]').remove()">Remove Grinder</button>`:''}</section>`}
+function machineManufacturerField(p){return `<label>Manufacturer</label><div class="autocomplete-wrap"><input id="pmake" value="${esc(p.equipment.espresso.manufacturer)}" autocomplete="off" data-manufacturer-id="${esc(p.equipment.espresso.manufacturer_id||'')}" oninput="handleMachineManufacturerInput(this)"><div class="autocomplete-menu"></div></div>`}
+function machineModelField(p){return `<label>Model</label><div class="autocomplete-wrap"><input id="pmodel" value="${esc(p.equipment.espresso.model)}" autocomplete="off" data-model-id="${esc(p.equipment.espresso.machine_model_id||'')}" oninput="handleMachineModelInput(this)"><div class="autocomplete-menu"></div></div>`}
+const previousEditProfileForSupabaseReference = editProfile;
+editProfile=function(){
+ previousEditProfileForSupabaseReference();
+ let section=[...document.querySelectorAll('[data-equip-for="Espresso"]')][0], p=profileData();
+ if(section)section.innerHTML=`<h3>Espresso Machine</h3>${machineManufacturerField(p)}${machineModelField(p)}`;
+ syncProfileEquipmentVisibility();
+}
+function backendBase(){const base=apiBase(); if(base)return base; return location.protocol.startsWith('http')?'':''}
+async function grinderFetch(path){const base=backendBase(); if(!base)return null; try{let res=await fetch(base+path); return res.ok?res.json():null}catch(e){return null}}
+async function referenceLookup(kind,...args){try{let api=window.BrewLibrarySupabase;if(api?.isConfigured?.())return await api[kind](...args)}catch(e){console.warn('Supabase reference lookup failed, using fallback',e)}return null}
+function suggestionMenu(input){return input.closest('.autocomplete-wrap')?.querySelector('.autocomplete-menu')}
+function renderAutocomplete(input,items,onPick){let menu=suggestionMenu(input); if(!menu)return; if(!items?.length){menu.innerHTML='';menu.style.display='none';return} menu.innerHTML=items.slice(0,4).map((item,i)=>`<button type="button" data-i="${i}"><b>${esc(item.label)}</b><small>${esc(item.source||'')}</small></button>`).join(''); menu.style.display='grid'; $$('button',menu).forEach(btn=>btn.onclick=()=>onPick(items[+btn.dataset.i]));}
+async function handleGrinderManufacturerInput(input){input.dataset.manufacturerId=''; let model=input.closest('[data-grinder-row]').querySelector('.g-model'); if(model){model.dataset.modelId='';model.dataset.manufacturerId=''} let q=input.value.trim(); if(q.length<2){renderAutocomplete(input,[]);return} let data={results:await referenceLookup('grinderManufacturers',q,4)}; if(!data.results)data=await grinderFetch(`/api/grinders/manufacturers/autocomplete?q=${encodeURIComponent(q)}&limit=4`); renderAutocomplete(input,data?.results||[],item=>{input.value=item.manufacturerName||item.label; input.dataset.manufacturerId=item.manufacturerId||item.id; if(model)model.dataset.manufacturerId=input.dataset.manufacturerId; renderAutocomplete(input,[]); h(8);});}
+async function handleGrinderModelInput(input){input.dataset.modelId=''; let q=input.value.trim(); if(q.length<1){renderAutocomplete(input,[]);return} let row=input.closest('[data-grinder-row]'), manufacturerId=row.querySelector('.g-name')?.dataset.manufacturerId||input.dataset.manufacturerId||''; let data={results:await referenceLookup('grinderModels',q,manufacturerId,4)}; if(!data.results){let qs=`q=${encodeURIComponent(q)}&limit=4${manufacturerId?`&manufacturerId=${encodeURIComponent(manufacturerId)}`:''}`; data=await grinderFetch(`/api/grinders/models/autocomplete?${qs}`)} renderAutocomplete(input,data?.results||[],item=>{input.value=item.modelName||item.label; input.dataset.modelId=item.modelId||item.id; input.dataset.manufacturerId=item.manufacturerId||manufacturerId; let m=row.querySelector('.g-name'); if(m&&!m.dataset.manufacturerId&&item.manufacturerName){m.value=item.manufacturerName;m.dataset.manufacturerId=item.manufacturerId||''} renderAutocomplete(input,[]); h(8);});}
+async function handleMachineManufacturerInput(input){input.dataset.manufacturerId=''; let model=document.getElementById('pmodel'); if(model){model.dataset.modelId='';model.dataset.manufacturerId=''} let q=input.value.trim(); if(q.length<2){renderAutocomplete(input,[]);return} let data={results:await referenceLookup('machineManufacturers',q,4)}; if(!data.results)data=await grinderFetch(`/api/equipment/autocomplete?q=${encodeURIComponent(q)}&limit=4`); let results=(data?.results||[]).filter(x=>x.type==='manufacturer'); renderAutocomplete(input,results,item=>{input.value=item.manufacturerName||item.label; input.dataset.manufacturerId=item.manufacturerId||item.id; if(model)model.dataset.manufacturerId=input.dataset.manufacturerId; renderAutocomplete(input,[]); h(8);});}
+async function handleMachineModelInput(input){input.dataset.modelId=''; let q=input.value.trim(); if(q.length<1){renderAutocomplete(input,[]);return} let manufacturerId=document.getElementById('pmake')?.dataset.manufacturerId||input.dataset.manufacturerId||''; let data={results:await referenceLookup('machineModels',q,manufacturerId,4)}; if(!data.results)data=await grinderFetch(`/api/equipment/autocomplete?q=${encodeURIComponent(q)}&limit=4`); let results=(data?.results||[]).filter(x=>x.modelId||x.type==='machine_model'); renderAutocomplete(input,results,item=>{input.value=item.modelName||item.label; input.dataset.modelId=item.modelId||item.id; input.dataset.manufacturerId=item.manufacturerId||manufacturerId; let m=document.getElementById('pmake'); if(m&&!m.dataset.manufacturerId&&item.manufacturerName){m.value=item.manufacturerName;m.dataset.manufacturerId=item.manufacturerId||''} renderAutocomplete(input,[]); h(8);});}
+async function resolveGrinderInput(grinder){const base=backendBase(); if(!base)return grinder; if(grinder.manufacturer_id&&grinder.grinder_model_id)return grinder; try{let res=await fetch(base+'/api/grinders/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({manufacturer:grinder.name,model:grinder.model,manufacturer_id:grinder.manufacturer_id,raw_manufacturer_input:grinder.raw_manufacturer_input,raw_model_input:grinder.raw_model_input})}); if(!res.ok)return grinder; let data=await res.json(); if(data.matched){grinder.manufacturer_id=data.manufacturer?.id||grinder.manufacturer_id; grinder.grinder_model_id=data.model?.id||grinder.grinder_model_id; grinder.name=data.manufacturer?.canonical_name||grinder.name; grinder.model=data.model?.canonical_name||grinder.model; grinder.raw_manufacturer_input=''; grinder.raw_model_input=''} else {grinder.manufacturer_id=data.manufacturer?.id||grinder.manufacturer_id; grinder.raw_manufacturer_input=grinder.manufacturer_id?'':grinder.name; grinder.raw_model_input=grinder.model} }catch(e){} return grinder}
+async function saveProfile(){
+ const brew=$$('[data-brew].selected').map(x=>x.dataset.brew), otherBrews=$$('.other-brew-input').map(x=>x.value.trim()).filter(Boolean), currentDefault=state.userProfile.defaultMethod||brew[0]||otherBrews[0]||'Espresso';
+ const methodChoices=[...brew.filter(m=>m!=='Other'),...(brew.includes('Other')?otherBrews:[])], defaultMethod=methodChoices.includes(currentDefault)?currentDefault:(methodChoices[0]||'Espresso');
+ let grinders=$$('[data-grinder-row]').map(row=>{let mfg=$('.g-name',row), model=$('.g-model',row), manufacturerId=mfg.dataset.manufacturerId||model.dataset.manufacturerId||'', modelId=model.dataset.modelId||''; return {id:row.dataset.id||uid(),name:mfg.value||'DF Grinders',model:model.value||'DF64',manufacturer_id:manufacturerId,grinder_model_id:modelId,raw_manufacturer_input:manufacturerId?'':(mfg.value||''),raw_model_input:modelId?'':(model.value||''),burrType:$('.g-burr',row).value,burrOther:$('.g-burr',row).value==='Other'?$('.g-other',row).value:'',profile:$('.g-profile',row).value}});
+ grinders=await Promise.all(grinders.map(resolveGrinderInput));
+ const customNotes=$$('.custom-flavor-input').map(x=>x.value.trim()).filter(Boolean), equipment={espresso:{manufacturer:$('#pmake')?.value||'',model:$('#pmodel')?.value||''},pourOver:{brewerType:$('#pourType')?.value||'',style:$('#pourStyle')?.value||'conical',styleOther:$('#pourStyleOther')?.value||''},aeroPress:{brewerType:$('#aeroType')?.value||'AeroPress'},frenchPress:{brewerType:$('#frenchType')?.value||'French press'},mokaPot:{brand:$('#mokaBrand')?.value||'',size:$('#mokaSize')?.value||''}};
+ state.userProfile={...state.userProfile,brew,defaultMethod,machine:{manufacturer:equipment.espresso.manufacturer,model:equipment.espresso.model},equipment,grinders:grinders.length?grinders:profileData().grinders,flavour:{roast:+$('#roastpref').value,notes:$$('[data-pref].selected').map(x=>x.dataset.pref),customNotes},workflow:$$('[data-work].selected').map(x=>x.dataset.work),otherBrews,otherBrew:otherBrews[0]||''};
+ if(state.community?.user)state.community.user.equipment=profileEquipment();
+ closeModal(); render();
+}
+function recipeSourceFrom(kind='',id='',method='',profileId=''){
+ const source={kind,id,method,profileId};
+ if(kind==='brew'){let brew=state.brews.find(x=>x.id===id); if(brew){source.brew=brew; source.bean=bean(brew.beanId); source.method=brew.method}}
+ else if(kind==='bean'){source.bean=bean(id); source.method=method||selectedMethod; source.profile=profileId?(source.bean?.brewProfiles?.[source.method]||[]).find(x=>x.id===profileId):activeProfile(source.bean,source.method)}
+ else if(kind==='recipe'){source.recipe=recipeById(id)}
+ else {source.bean=currentBean(); source.method=method||selectedMethod||profileData().defaultMethod; source.profile=activeProfile(source.bean,source.method)}
+ return source;
+}
+function recipeDraft(kind='',id='',method='',profileId=''){
+ const src=recipeSourceFrom(kind,id,method,profileId), r=src.recipe, b=src.bean||bean(r?.sourceBeanId)||currentBean(), brew=src.brew, p=src.profile, m=r?.method||src.method||brew?.method||method||selectedMethod||'Espresso', bm=baseMethod(m), params=r?.params||{};
+ const dose=params.dose ?? p?.dose ?? brew?.dose ?? 18, water=params.water ?? params.yieldOut ?? p?.water ?? p?.yieldOut ?? brew?.water ?? brew?.yieldOut ?? (bm==='Espresso'?36:300), temp=params.temp ?? p?.temp ?? brew?.temp ?? tempVal(p,bm), totalTime=params.totalTime ?? params.time ?? p?.totalTime ?? p?.time ?? brew?.totalTime ?? brew?.time ?? 0;
+ return {id:r?.id||'',title:r?.title||`${b?.name||'New'} ${m} Recipe`,description:r?.description||r?.notes||p?.notes||brew?.notes||'',method:m,bean:b,brew,profile:p,params:{...params,dose,water,yieldOut:bm==='Espresso'?water:undefined,temp,totalTime,time:bm==='Espresso'?totalTime:undefined,grind:params.grind??p?.grind??brew?.grind??18,ratio:params.ratio||ratio({dose,yieldOut:bm==='Espresso'?water:undefined,water:bm==='Espresso'?undefined:water}),stages:normalizePourStages(params.stages||p?.stages||brew?.stages||defaultPourStages())},score:r?.score??p?.score??brew?.rating??7.5,notes:r?.notes||'',workflow:r?.workflow||['Filter Rinse','Bloom','Center Pour'],visibility:r?.visibility||'private',roastLevel:r?.roastLevel||b?.roastLevel||preferredRoast(),grinderId:r?.grinderId||params.grinderId||p?.grinderId||brew?.grinderId||profileData().grinders[0]?.id};
+}
+function methodChips(selected){return profileBrewOptions().map(m=>`<button type="button" class="recipe-method ${selected===m?'sel':''}" onclick="setRecipeMethod('${m}')">${brewSvg(baseMethod(m))}<span>${esc(m)}</span></button>`).join('')}
+function setRecipeMethod(m){$('#recipeMethod').value=m; $$('.recipe-method').forEach(x=>x.classList.toggle('sel',x.textContent.trim()===m))}
+function recipeLinkedBeanCard(b){return `<section class="recipe-section linked-bean"><h3>Linked Bean</h3><div class="recipe-link-row">${b?.photo?`<img src="${b.photo}">`:'<div class="mini-bag">BL</div>'}<div><b>${esc(b?.name||'No bean linked')}</b><small>${esc([b?.process,b?.roastLevel,b?.roaster].filter(Boolean).join(' · ')||'Choose from an existing brew or bean')}</small></div><span>›</span></div></section>`}
+function recipeEquipmentSection(d){let g=grinder(d.grinderId), eq=methodEquipment(baseMethod(d.method)); return `<section class="recipe-section"><h3>Equipment <button type="button" onclick="editProfile()">View / Edit</button></h3>${recipeInfoRow('Grinder',`${grinderManufacturer(g)} ${grinderModel(g)}`)}${recipeInfoRow('Burrs',g?.burrType==='Other'?g.burrOther:g?.burrType)}${recipeInfoRow(eq.title,eq.value)}</section>`}
+function recipeInfoRow(label,value){return `<div class="recipe-info-row"><span>${esc(label)}</span><b>${esc(value||'—')}</b><em>›</em></div>`}
+function recipeCoffeeDetails(b){return `<section class="recipe-section"><h3>Coffee Details <small>(Auto from bean)</small></h3>${recipeInfoRow('Roaster',b?.roaster)}${recipeInfoRow('Process',b?.process)}${recipeInfoRow('Roasted On',b?.roastDate)}${recipeInfoRow('Origin',b?.origin)}${recipeInfoRow('Varietal',b?.varietal||'—')}</section>`}
+function recipeSettings(d){let p=d.params, bm=baseMethod(d.method); return `<section class="recipe-section"><h3>Main Brew Settings</h3><div class="recipe-setting-grid">${recipeSetting('Dose',`${p.dose}g`)}${recipeSetting(bm==='Espresso'?'Yield':'Water',`${p.water||p.yieldOut}g`)}${recipeSetting('Ratio',p.ratio||ratio({dose:p.dose,water:p.water,yieldOut:p.yieldOut}))}${recipeSetting('Temp',`${p.temp}°C`)}${recipeSetting('Total Time',fmt(p.totalTime||p.time))}${recipeSetting('TDS (Target)','1.35%')}</div></section>`}
+function recipeSetting(label,value){return `<div><b>${esc(value||'—')}</b><span>${esc(label)}</span></div>`}
+function recipeWorkflow(d){let items=['Filter Rinse','Bloom','Center Pour','Spiral Pour','Pulse Pours','Continuous Pour','Swirl','Stir','Agitation']; let selected=new Set(d.workflow||[]); return `<section class="recipe-section"><h3>Workflow <button type="button">Edit</button></h3><div class="workflow-chips">${items.map(x=>`<button type="button" class="${selected.has(x)?'sel':''}" data-workflow="${x}" onclick="this.classList.toggle('sel')">${x}</button>`).join('')}</div></section>`}
+function recipeStagesSection(d){let stages=window.recipeStageDraft||normalizePourStages(d.params.stages||defaultPourStages()); return `<section class="recipe-section"><h3>Recipe Stages <small>${stages.length} stages</small></h3><div id="recipeStageList">${stages.map((s,i)=>recipeStageRow(s,i)).join('')}</div><button class="recipe-add-stage" type="button" onclick="addRecipeStage()">+ Add Stage</button></section>`}
+function recipeStageRow(s,i){return `<button type="button" class="recipe-stage-row" onclick="editRecipeStage(${i})"><span>${i+1}</span><b>${esc(s.name)}</b><small>${fmt(s.time)} · ${s.weight}g</small><em>≡</em></button>`}
+function currentRecipeStages(){let rows=$$('#recipeStageList .recipe-stage-row'); if(rows.length)return rows.map((r,i)=>({name:r.dataset.name||r.querySelector('b').textContent,time:+r.dataset.time||0,weight:+r.dataset.weight||0,temp:+r.dataset.temp||0,grind:+r.dataset.grind||0,notes:r.dataset.notes||''})); return window.recipeStageDraft||[]}
+function setRecipeStageData(row,s){row.dataset.name=s.name; row.dataset.time=s.time; row.dataset.weight=s.weight; row.dataset.temp=s.temp||''; row.dataset.grind=s.grind||''; row.dataset.notes=s.notes||''; row.querySelector('b').textContent=s.name; row.querySelector('small').textContent=`${fmt(s.time)} · ${s.weight}g`}
+function addRecipeStage(){let stages=currentRecipeStages(); stages.splice(Math.max(1,stages.length-1),0,{name:`Pour ${Math.max(1,stages.length-1)}`,time:(stages.at(-2)?.time||45)+40,weight:(stages.at(-2)?.weight||60)+80}); redrawRecipeStages(stages)}
+function redrawRecipeStages(stages){stages=normalizePourStages(stages); window.recipeStageDraft=stages; let list=$('#recipeStageList'); if(!list)return; list.innerHTML=stages.map((s,i)=>recipeStageRow(s,i)).join(''); $$('#recipeStageList .recipe-stage-row').forEach((r,i)=>setRecipeStageData(r,stages[i]))}
+function editRecipeStage(i){let s=currentRecipeStages()[i]||defaultPourStages()[i]||{name:'Pour 1',time:0,weight:0}; modal(`<div class="recipe-editor"><div class="recipe-topbar"><button onclick="closeModal()">Cancel</button><b>Edit Stage</b><button onclick="saveRecipeStage(${i})">Save</button></div><section class="recipe-section"><label>Stage Order</label><input id="stageOrder" value="${i+1}" readonly><label>Stage Name</label><input id="stageName" value="${esc(s.name)}" readonly><div class="seg"><button class="sel">Time</button><button>Weight</button><button>Both</button></div><label>Time</label><input id="stageTime" type="number" value="${s.time}"><label>Pour / Weight</label><input id="stageWeight" type="number" value="${s.weight}"><label>Temp (Optional)</label><input id="stageTemp" type="number" value="${s.temp||''}"><label>Grind (Optional)</label><input id="stageGrind" type="number" step="0.1" value="${s.grind||''}"><label>Instructions / Notes</label><textarea id="stageNotes">${esc(s.notes||'')}</textarea><button class="btn danger full" onclick="deleteRecipeStage(${i})">Delete Stage</button></section></div>`)}
+function saveRecipeStage(i){let stages=currentRecipeStages(); stages[i]={name:$('#stageName').value,time:+$('#stageTime').value,weight:+$('#stageWeight').value,temp:+$('#stageTemp').value||'',grind:+$('#stageGrind').value||'',notes:$('#stageNotes').value}; closeModal(); openRecipeEditor(window.recipeEditorContext?.kind,window.recipeEditorContext?.id,window.recipeEditorContext?.method,window.recipeEditorContext?.profileId,stages)}
+function deleteRecipeStage(i){let stages=currentRecipeStages(); stages.splice(i,1); closeModal(); openRecipeEditor(window.recipeEditorContext?.kind,window.recipeEditorContext?.id,window.recipeEditorContext?.method,window.recipeEditorContext?.profileId,stages)}
+function openRecipeEditor(kind='',id='',method='',profileId='',stageOverride=null){let d=recipeDraft(kind,id,method,profileId); if(stageOverride)d.params.stages=stageOverride; window.recipeStageDraft=normalizePourStages(d.params.stages||defaultPourStages()); window.recipeEditorContext={kind,id,method,profileId}; modal(`<div class="recipe-editor"><div class="recipe-topbar"><button onclick="closeModal()">×</button><b>${d.id?'Edit':'Create'} Recipe</b><button onclick="saveRecipeEditor()">Save Recipe</button></div>${recipeLinkedBeanCard(d.bean)}<section class="recipe-section"><label>Recipe Title</label><input id="recipeTitle" maxlength="60" value="${esc(d.title)}"><label>Description</label><textarea id="recipeDesc" maxlength="1000">${esc(d.description)}</textarea></section><section class="recipe-section"><h3>Brew Method</h3><input id="recipeMethod" type="hidden" value="${esc(d.method)}"><div class="recipe-method-grid">${methodChips(d.method)}</div></section>${recipeEquipmentSection(d)}${recipeCoffeeDetails(d.bean)}${recipeSettings(d)}${recipeWorkflow(d)}${recipeStagesSection(d)}<section class="recipe-section"><h3>Notes <small>(Optional)</small></h3><textarea id="recipeNotes" placeholder="Add final notes or tips...">${esc(d.notes)}</textarea></section></div>`); redrawRecipeStages(d.params.stages)}
+function saveRecipeEditor(){ensureCommunity(state); let ctx=window.recipeEditorContext||{}, d=recipeDraft(ctx.kind,ctx.id,ctx.method,ctx.profileId), method=$('#recipeMethod').value, bm=baseMethod(method), stages=currentRecipeStages(), dose=d.params.dose, water=d.params.water||d.params.yieldOut; let recipe={id:d.id||uid(),ownerId:state.community.user.id,ownerName:state.community.user.displayName,ownerHandle:state.community.user.handle,method,title:$('#recipeTitle').value||`${method} Recipe`,description:$('#recipeDesc').value,visibility:d.visibility,sourceBeanId:d.bean?.id||'',sourceProfileId:d.profile?.id||'',beanName:d.bean?.name||'',roaster:d.bean?.roaster||'',origin:d.bean?.origin||'',process:d.bean?.process||'',roastLevel:d.roastLevel,grinderId:d.grinderId,params:{...d.params,dose,water:bm==='Espresso'?undefined:water,yieldOut:bm==='Espresso'?water:undefined,stages:bm==='Pour Over'?stages:[]},workflow:$$('[data-workflow].sel').map(x=>x.dataset.workflow),tags:[...new Set([method,d.roastLevel,...(state.userProfile.flavour?.notes||[])])],score:d.score,notes:$('#recipeNotes').value||$('#recipeDesc').value,saves:0,createdAt:d.id?(recipeById(d.id)?.createdAt||iso()):iso(),updatedAt:iso()}; let old=recipeById(recipe.id); if(old)Object.assign(old,recipe); else state.community.recipes.unshift(recipe); closeModal(); view='recipes'; recipeTab='library'; render(); toast('Recipe saved')}
+function recipeMetricStrip(r){let p=r.params||{}, bm=baseMethod(r.method); return `<div class="recipe-view-strip">${recipeSetting('Ratio',p.ratio||ratio({dose:p.dose,water:p.water,yieldOut:p.yieldOut}))}${recipeSetting('Dose',`${p.dose||'—'}g`)}${recipeSetting('Temp',`${p.temp||'—'}°`)}${recipeSetting('Total Time',fmt(p.totalTime||p.time))}</div>`}
+function recipeDescription(r){let text=r.description||r.notes||'No description yet.'; return `<section class="recipe-section"><h3>Description</h3><p class="recipe-description">${esc(text)}</p>${text.length>180?'<button class="show-more" type="button">Show more</button>':''}</section>`}
+function recipeViewWorkflow(r){let workflow=r.workflow||[], method=r.method; return `<section class="recipe-section"><h3>Brew Method & Workflow</h3><div class="recipe-view-method">${brewSvg(baseMethod(method))}<span>${esc(method)}</span></div><div class="workflow-chips">${workflow.length?workflow.map(x=>`<button class="sel" type="button">${esc(x)}</button>`).join(''):'<span class="muted">No workflow steps set.</span>'}</div></section>`}
+function recipeViewStages(r){let stages=normalizePourStages(r.params?.stages||[]); if(baseMethod(r.method)!=='Pour Over')return ''; return `<section class="recipe-section recipe-view-stages"><h3>Recipe Stages <small>${stages.length} stages</small></h3>${stages.map((s,i)=>`<div class="recipe-view-stage"><span>${i+1}</span><div><b>${esc(s.name)}</b><small>${fmt(s.time)} · ${s.weight}g · ${r.params?.temp||'—'}°C</small><p>${esc(s.notes||stageInstruction(s.name))}</p></div><em>${fmt(s.time)}</em></div>`).join('')}<div class="recipe-stage-total"><span>Total Time: ${fmt(r.params?.totalTime||stages[stages.length-1]?.time)}</span><span>Total Water: ${r.params?.water||stages[stages.length-1]?.weight||'—'}g</span></div></section>`}
+function stageInstruction(name){if(name==='Bloom')return'Pour water evenly over the bed. Make sure all grinds are saturated.'; if(name==='Final Pour')return'Pour gently to desired total weight.'; return'Pour slowly in small circles from the center outward.'}
+function localRecipeCopy(original){ensureCommunity(state); let existing=state.community.recipes.find(r=>r.originalRecipeId===original.id&&r.ownerId===state.community.user.id); if(existing)return existing; let copy={...JSON.parse(JSON.stringify(original)),id:uid(),ownerId:state.community.user.id,ownerName:state.community.user.displayName,ownerHandle:state.community.user.handle,visibility:'private',originalRecipeId:original.id,createdAt:iso(),updatedAt:iso()}; state.community.recipes.unshift(copy); if(!state.community.savedRecipeIds.includes(copy.id))state.community.savedRecipeIds.push(copy.id); save(); return copy}
+function editRecipeFromView(id){let r=recipeById(id); if(!r)return; let editable=r.ownerId===state.community.user.id?r:localRecipeCopy(r); openRecipeEditor('recipe',editable.id)}
+function recipeView(id){
+ let r=recipeById(id); if(!r)return; let mine=r.ownerId===state.community.user.id, saved=state.community.savedRecipeIds.includes(id), b=bean(r.sourceBeanId)||state.beans.find(x=>x.name===r.beanName), g=grinder(r.grinderId||r.params?.grinderId);
+ const editLabel=mine?'Edit Recipe':(saved?'Edit Local Copy':'Save & Edit Copy');
+ modal(`<div class="recipe-view"><div class="recipe-topbar"><button onclick="closeModal()">‹</button><b>${esc(r.title)}</b><button onclick="editRecipeFromView('${r.id}')">Edit</button></div>${recipeLinkedBeanCard(b||{name:r.beanName,roaster:r.roaster,process:r.process,origin:r.origin})}${recipeMetricStrip(r)}${recipeDescription(r)}${recipeViewWorkflow(r)}${recipeEquipmentSection(recipeDraft('recipe',r.id))}${recipeViewStages(r)}<section class="recipe-section"><h3>Notes & Tips</h3><p class="recipe-description">${esc(r.notes||'No notes yet.')}</p></section><div class="recipe-view-actions"><button class="btn full" onclick="useCommunityRecipe('${r.id}')">▶ Brew This Recipe</button><button class="btn secondary" onclick="saveCommunityRecipe('${r.id}')">${saved?'Saved':'♡'}</button></div><button class="btn secondary full" onclick="editRecipeFromView('${r.id}')">${editLabel}</button></div>`)
+}
+function recipeDetail(id){recipeView(id)}
+function myRecipeBookRecipes(){
+ ensureCommunity(state);
+ const c=state.community;
+ return c.recipes.filter(r=>r.ownerId===c.user.id||c.savedRecipeIds.includes(r.id));
+}
+function methodStat(recipes,method){return recipes.filter(r=>baseMethod(r.method)===method||r.method===method).length}
+function recipeBookOverview(recipes){
+ const methods=['Pour Over','French Press','Espresso','Cold Brew'];
+ const beans=new Set(recipes.map(r=>r.beanName||r.sourceBeanId).filter(Boolean));
+ const avg=recipes.length?recipes.reduce((s,r)=>s+(+r.score||0),0)/recipes.length:0;
+ return `<section class="recipe-book-overview"><h3>Recipe Book Overview</h3><div class="recipe-book-stats"><div class="big"><b>${recipes.length}</b><span>Total Recipes</span></div>${methods.map(m=>`<div>${brewSvg(m==='Cold Brew'?'Other':m)}<b>${methodStat(recipes,m)}</b><span>${m==='French Press'?'Press':m}</span></div>`).join('')}</div><div class="recipe-book-substats"><div><b>☆ ${avg?avg.toFixed(1):'—'}</b><span>Average Score</span></div><div><b>◒ ${beans.size}</b><span>Different Beans</span></div></div></section>`;
+}
+function recipeCard(r){
+ const flavours=(r.tags||[]).filter(t=>!brewMethods.includes(t)&&!['Light','Medium','Dark'].includes(t)).slice(0,3).join(', ');
+ const score=+(r.score||0);
+ return `<article class="recipe-card recipe-book-card click" onclick="recipeView('${r.id}')"><div class="recipe-thumb">${r.photo?`<img src="${r.photo}">`:brewSvg(baseMethod(r.method))}</div><div class="recipe-book-copy"><h3>${esc(r.title)}</h3><p>${esc([r.origin,r.process].filter(Boolean).join(' · ')||r.beanName||'Recipe')}</p><p>${esc(flavours||r.notes||'No flavour notes yet')}</p><div><span class="score-chip">☆ ${score?score.toFixed(1):'—'}</span><span class="method-chip">${esc(r.method)}</span></div></div><span class="recipe-chevron">›</span></article>`;
+}
+function recipesView(){
+ ensureCommunity(state);
+ const all=recipeResults(), mine=myRecipeBookRecipes(), shown=recipeTab==='library'?mine:all;
+ return `<section class="card recipes-head recipe-book-head"><h2>My Recipe Book</h2><p>Your personal collection of brew recipes.</p>${recipeBookOverview(mine)}<div class="recipe-book-actions"><button class="btn full" onclick="openRecipeEditor()">Create New Recipe</button><button class="btn secondary full" onclick="openRecipeBasisPicker()">Create From Dialed-In Bean</button></div></section><section class="card recipe-list-card"><div class="recipe-list-title"><h2>${recipeTab==='library'?'My Recipes':recipeTab==='discover'?'Discover':'Following'}</h2><button class="sort-pill" type="button">Sort⌄</button></div><div class="tabs recipe-tabs"><button class="${recipeTab==='library'?'sel':''}" onclick="recipeTab='library';render()">My Recipe Book</button><button class="${recipeTab==='discover'?'sel':''}" onclick="recipeTab='discover';render()">Discover</button><button class="${recipeTab==='following'?'sel':''}" onclick="recipeTab='following';render()">Following</button></div><input id="recipeSearch" placeholder="Search recipes, beans, flavours, brew type" value="${esc(recipeQuery)}" oninput="recipeQuery=this.value;drawRecipeList()"><div id="recipeList">${shown.map(recipeCard).join('')||'<p>No matching recipes yet.</p>'}</div></section>`;
+}
+function currentBeans(){return state.beans.filter(b=>b.status==='current')}
+function home(){
+ const current=currentBeans(), b=currentBean(), l=b&&lastBrew(b.id), g=grinder(l?.grinderId||b?.grinderId), d=dueInfo(), month=new Date().toISOString().slice(0,7);
+ return `${profileCard()}<section class="card current-beans-card click" onclick="go('beans')"><h2>Current Beans</h2><div class="home-bean-list">${current.slice(0,3).map(beanHomeCard).join('')||'<p>No current beans yet.</p>'}</div></section><section class="card click" onclick="openBeanDetail('${b?.id||''}')"><h2>Last Used Settings</h2><div class="settings-summary"><div><b>${esc(g.name||g.model||'—')}</b><p>${esc([g.burrType==='Other'?g.burrOther:g.burrType,g.profile].filter(Boolean).join(' • '))}</p></div><strong>${l?l.grind:'—'}</strong></div><div class="metric-grid"><p>Dose<br><b>${l?.dose||'—'}g</b></p><p>Output<br><b>${l?.yieldOut||l?.water||'—'}g</b></p><p>Ratio<br><b>${l?ratio(l):'—'}</b></p><p>Time<br><b>${l?fmt(l.time||l.totalTime):'—'}s</b></p></div></section><div class="stats"><button onclick="go('beans')"><span>Current Beans</span><b>${current.length}</b></button><button onclick="go('history')"><span>Brews This Month</span><b>${state.brews.filter(x=>x.createdAt.slice(0,7)===month).length}</b></button><button onclick="go('maintenance')"><span>Maintenance Due</span><b>${d.days<=0?'Now':d.days+'d'}</b></button></div><section class="card click" onclick="go('history')"><h2>Brew History</h2>${state.brews.slice().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,3).map(brewRow).join('')||'<p>No brews yet.</p>'}</section>`;
+}
+function beanHomeCard(b){let l=lastBrew(b.id);return `<button type="button" class="bean-card home-bean-card" onclick="event.stopPropagation();openBeanDetail('${b.id}')"><div class="bag ${b.photo?'has-photo':''}">${b.photo?`<img src="${b.photo}">`:'BL'}</div><div><div class="bean-title">${esc(b.name)}</div><p>${esc(b.roaster||'')}<br>${esc([b.origin,b.process,l?l.grind+' grind':''].filter(Boolean).join(' • '))}</p></div><span class="pill">${esc(b.roastLevel||'')}</span></button>`}
+function beansView(){
+ const arch=beanTab==='archive', list=state.beans.filter(b=>arch?b.status==='archived':b.status==='current');
+ return `<section class="card"><h2>Beans</h2><div class="bean-actions-top"><button class="btn full" onclick="go('log')">Log a Brew</button><button class="btn secondary full" onclick="openRecipeEditor()">Create a Recipe</button></div><div class="tabs"><button class="${!arch?'sel':''}" onclick="beanTab='current';render()">Current Beans <span>${state.beans.filter(x=>x.status==='current').length}</span></button><button class="${arch?'sel':''}" onclick="beanTab='archive';render()">Archive <span>${state.beans.filter(x=>x.status==='archived').length}</span></button></div><input autocapitalize="words" placeholder="Search all beans" oninput="filterBeans(this.value)"><button class="btn secondary" onclick="openBeanForm()">Add Bean</button><div id="beanList">${list.map(beanCard).join('')||'<p>No beans here.</p>'}</div></section>`;
+}
+function filterBeans(q){q=(q||'').toLowerCase().trim();let arch=beanTab==='archive',source=q?state.beans:state.beans.filter(b=>arch?b.status==='archived':b.status==='current');$('#beanList').innerHTML=source.filter(b=>[b.name,b.roaster,b.origin,b.process,b.roastLevel].join(' ').toLowerCase().includes(q)).map(beanCard).join('')||'<p>No matches.</p>'}
+function resizeImage(file,max=1200,quality=.82){return new Promise(resolve=>{let r=new FileReader();r.onload=()=>{let img=new Image();img.onload=()=>{let scale=Math.min(1,max/Math.max(img.width,img.height)),w=Math.round(img.width*scale),hgt=Math.round(img.height*scale),c=document.createElement('canvas');c.width=w;c.height=hgt;c.getContext('2d').drawImage(img,0,0,w,hgt);resolve(c.toDataURL('image/jpeg',quality))};img.onerror=()=>resolve(r.result);img.src=r.result};r.onerror=()=>resolve('');r.readAsDataURL(file)})}
+async function loadPhoto(e,id){let f=e.target.files&&e.target.files[0];if(!f)return;let data=await resizeImage(f);if(!data){toast('Photo failed');return}try{if(id==='new'){window.tempPhoto=data;let btn=document.querySelector('.modal .bag.large');if(btn){btn.classList.add('has-photo');btn.innerHTML=`<img src="${data}"><em>${icon('camera')}</em>`}toast('Bean photo ready');return}let b=bean(id);if(!b)return;b.photo=data;save();toast('Bean photo saved');if(document.getElementById('modal')){closeModal();openBeanDetail(id)}else render()}catch(err){toast('Photo too large to save')}}
+function localCopyFor(original){ensureCommunity(state);return state.community.recipes.find(r=>r.originalRecipeId===original.id&&r.ownerId===state.community.user.id)}
+function saveCommunityRecipe(id){ensureCommunity(state);let r=recipeById(id);if(!r)return;if(r.ownerId!==state.community.user.id){let copy=localRecipeCopy(r);toast('Added to My Recipe Book');recipeTab='library';view='recipes';render();return copy}if(!state.community.savedRecipeIds.includes(id))state.community.savedRecipeIds.push(id);trackEvent('recipe.saved',{recipeId:id});save();render();toast('Recipe saved to library')}
+function recipeView(id){
+ let r=recipeById(id); if(!r)return; let mine=r.ownerId===state.community.user.id, copy=localCopyFor(r), saved=state.community.savedRecipeIds.includes(id)||!!copy, b=bean(r.sourceBeanId)||state.beans.find(x=>x.name===r.beanName);
+ const editLabel=mine?'Edit Recipe':(copy?'Edit Local Copy':'Add to My Recipe Book');
+ const editAction=mine||copy?`editRecipeFromView('${copy?.id||r.id}')`:`saveCommunityRecipe('${r.id}')`;
+ modal(`<div class="recipe-view"><div class="recipe-topbar"><button onclick="closeModal()">‹</button><b>${esc(r.title)}</b><button onclick="${editAction}">${mine?'Edit':copy?'Edit':'Add'}</button></div>${recipeLinkedBeanCard(b||{name:r.beanName,roaster:r.roaster,process:r.process,origin:r.origin})}${recipeMetricStrip(r)}${recipeDescription(r)}${recipeViewWorkflow(r)}${recipeEquipmentSection(recipeDraft('recipe',r.id))}${recipeViewStages(r)}<section class="recipe-section"><h3>Notes & Tips</h3><p class="recipe-description">${esc(r.notes||'No notes yet.')}</p></section><div class="recipe-view-actions"><button class="btn full" onclick="useCommunityRecipe('${r.id}')">▶ Brew This Recipe</button><button class="btn secondary" onclick="saveCommunityRecipe('${r.id}')">${saved?'Saved':'♡'}</button></div><button class="btn secondary full" onclick="${editAction}">${editLabel}</button></div>`)
+}
+function methodSelector(sel,context='bean',beanId=''){
+ const methods=context==='log'?profileBrewOptions():[...new Set([...brewMethods,...Object.keys(bean(beanId)?.brewProfiles||{})])].filter(Boolean), ordered=context==='log'?orderMethodsByDefault(methods):methods, visible=ordered.slice(0,3), extras=ordered.slice(3), id=`moreMethods-${context}-${beanId||'log'}`;
+ return `<div class="brew-tabs method-card-grid cards-${visible.length+1}">${visible.map(m=>methodButton(m,sel,context,beanId)).join('')}<button type="button" class="more-method-card" onclick="toggleMoreMethods('${id}')">${brewSvg('More')}<small>More</small></button></div><div id="${id}" class="brew-tabs method-extra-tabs" style="display:none">${extras.length?extras.map(m=>methodButton(m,sel,context,beanId)).join(''):'<p>No additional methods selected.</p>'}</div>`;
+}
+function orderMethodsByDefault(methods){let def=profileData().defaultMethod;return [...methods].sort((a,b)=>(a===def?-1:b===def?1:0))}
+function toggleMoreMethods(id){let el=document.getElementById(id);if(el)el.style.display=el.style.display==='none'?'flex':'none'}
+function beanGrinderMenu(beanId,profileId=''){let gs=profileData().grinders;return `<div class="bean-grinder-menu">${gs.map(g=>`<button onclick="setBeanProfileGrinder('${beanId}','${profileId}','${g.id}')"><b>${esc(grinderModel(g))}</b><small>${esc(grinderManufacturer(g))}</small></button>`).join('')}</div>`}
+function toggleBeanGrinders(beanId,profileId=''){let el=document.getElementById('beanGrinderMenu'); if(el){el.remove();return} let row=document.querySelector('.equipment-row'); if(row)row.insertAdjacentHTML('afterend',beanGrinderMenu(beanId,profileId))}
+function setBeanProfileGrinder(beanId,profileId,grinderId){let b=bean(beanId), p=profileId?Object.values(b.brewProfiles||{}).flat().find(x=>x.id===profileId):activeProfile(b,selectedMethod); if(p)p.grinderId=grinderId; else b.grinderId=grinderId; save(); closeModal(); openBeanDetail(beanId)}
+function methodEquipmentCards(method,g){const bm=baseMethod(method),m=methodEquipment(bm),beanId=currentBean()?.id||'',profile=activeProfile(bean(beanId),selectedMethod);const grinderSubtitle=[grinderManufacturer(g),grinderModel(g),g?.burrType==='Other'?g.burrOther:g?.burrType,g?.profile].filter(Boolean).join(' • ');return `<div class="equipment-list">${equipmentRow(grinderBurrSvg(),'Grinder',grinderSubtitle,`toggleBeanGrinders('${beanId}','${profile?.id||''}')`)}${equipmentRow(equipmentMethodSvg(bm),m.title,m.value,'editProfile()')}</div>`}
+function bindAutocapitalize(){$$('input,textarea').forEach(el=>{let exception=['notes','recipeDesc','recipeNotes','stageNotes','ratingReview'].includes(el.id);el.setAttribute('autocapitalize',exception?'sentences':'words')})}
+const originalBindForAutocap=bind;bind=function(){originalBindForAutocap();bindAutocapitalize();requestWakeLockIfNeeded()}
+let wakeLock=null;async function requestWakeLockIfNeeded(){let active=['log','recipes'].includes(view)||document.querySelector('.focused-brew,.recipe-editor,.recipe-view');if(!active||!navigator.wakeLock)return;try{if(!wakeLock)wakeLock=await navigator.wakeLock.request('screen')}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')requestWakeLockIfNeeded();else wakeLock=null});
+views.home=()=>home();
+views.beans=()=>beansView();
+function recipeCard(r){
+ const c=state.community, mine=r.ownerId===c.user.id, saved=c.savedRecipeIds.includes(r.id), following=c.follows.includes(r.ownerId), community=recipeDisplayRating(r);
+ return `<article class="recipe-card click" onclick="recipeView('${r.id}')"><div class="recipe-top"><span class="pill">${esc(r.method)}</span><span class="match">${Math.round(recipeMatchScore(r)*10)/10} match</span></div><h3>${esc(r.title)}</h3><p>${esc([r.beanName,r.roaster,r.origin].filter(Boolean).join(' · '))}</p><div class="recipe-meta"><b>${r.score||'—'}</b><span>${esc(recipeParamLine(r))}</span></div><div class="recipe-rating-row"><span>Community ${community.count?community.avg:'—'} (${community.count})</span>${community.mine?`<span>Your rating ${community.mine.rating}</span>`:''}</div><div class="tag-row">${(r.tags||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div><div class="recipe-owner"><span>@${esc(r.ownerHandle||'user')}</span><div>${mine?`<button onclick="event.stopPropagation();openRecipeEditor('recipe','${r.id}')">Edit</button><button onclick="event.stopPropagation();publishRecipe('${r.id}')">${r.visibility==='public'?'Update Public':'Publish'}</button>`:`<button onclick="event.stopPropagation();saveCommunityRecipe('${r.id}')">${saved?'Saved':'Save'}</button><button onclick="event.stopPropagation();toggleFollow('${r.ownerId}')">${following?'Following':'Follow'}</button>`}</div></div></article>`;
+}
+function recipesView(){
+ ensureCommunity(state); const c=state.community, count=recipeResults().length, grinders=profileData().grinders;
+ return `<section class="card recipes-head"><h2>Recipe Book</h2><p>Create, save, and discover brew recipes built from beans, brew logs, and dialed-in profiles.</p><div class="tabs recipe-tabs"><button class="${recipeTab==='library'?'sel':''}" onclick="recipeTab='library';render()">My Library</button><button class="${recipeTab==='discover'?'sel':''}" onclick="recipeTab='discover';render()">Discover</button><button class="${recipeTab==='following'?'sel':''}" onclick="recipeTab='following';render()">Following</button></div><input id="recipeSearch" placeholder="Search recipes, users, beans, grinder, brew type, or flavors" value="${esc(recipeQuery)}" oninput="recipeQuery=this.value;drawRecipeList()"><div class="filter-row"><select onchange="recipeMethod=this.value;render()"><option ${recipeMethod==='All'?'selected':''}>All</option>${brewMethods.map(m=>`<option ${recipeMethod===m?'selected':''}>${m}</option>`).join('')}</select><select onchange="window.recipeGrinder=this.value;render()"><option value="All" ${(window.recipeGrinder||'All')==='All'?'selected':''}>All Grinders</option>${grinders.map(g=>`<option value="${g.id}" ${(window.recipeGrinder||'All')===g.id?'selected':''}>${esc(grinderModel(g))}</option>`).join('')}</select></div><button class="btn full" onclick="openRecipeEditor()">Create New Recipe</button><button class="btn secondary full" onclick="openRecipeBasisPicker()">Create From Dialed-In Bean</button><div class="muted count-line"><span id="recipeCount">${count}</span> recipes shown · @${esc(c.user.handle)}</div></section><section class="card recipe-list-card"><div id="recipeList">${recipeResults().map(recipeCard).join('')||'<p>No matching recipes yet.</p>'}</div></section>`;
+}
+function brewDetail(id){let x=state.brews.find(b=>b.id===id); if(!x)return; let b=bean(x.beanId), g=grinder(x.grinderId); modal(`<button class="edit-icon modal-edit" onclick="editBrew('${id}')">${icon('pencil')}</button><h2>${x.method} Details</h2><div class="hero-detail"><b>${x.rating||'—'}</b><span>Taste Score</span></div><div class="detail"><div><span>Bean</span>${esc(b?.name||'')}</div><div><span>Grinder</span>${esc(grinderName(g)||'—')}</div><div><span>Grind</span>${x.grind}</div><div><span>Dose</span>${x.dose}g</div><div><span>Output</span>${x.yieldOut||x.water||'—'}g</div><div><span>Ratio</span>${ratio(x)}</div><div><span>Time</span>${fmt(x.time||x.totalTime)}s</div><div><span>Flavours</span>${(x.flavours||[]).join(', ')||'—'}</div><div><span>Notes</span>${esc(x.notes||'—')}</div></div><button class="btn full" onclick="openRecipeEditor('brew','${id}')">Create Recipe From This Brew</button>`)}
+function logView(pref={}){
+ let b=bean(pref.beanId)||currentBean(), options=profileBrewOptions(); if(!options.includes(selectedMethod))selectedMethod=profileData().defaultMethod||options[0]||'Espresso';
+ let m=pref.method||selectedMethod||'Espresso', bm=baseMethod(m), p=pref.profileId?activeProfile(b,m):activeProfile(b,m), temp=tempVal(p,bm), gId=p?.grinderId||lastBrew(b?.id,m)?.grinderId||profileData().grinders[0]?.id;
+ const isEsp=bm==='Espresso', isPour=bm==='Pour Over';
+ return `<section class="card"><h2>Log Brew</h2><div class="seg"><button class="sel">Existing Bean</button><button onclick="openBeanForm()">New Bean</button></div><label>Bean</label><select id="logBean" onchange="state.currentBeanId=this.value;render()">${state.beans.filter(x=>x.status==='current').map(x=>`<option value="${x.id}" ${x.id===b?.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select><label>Brew Method</label>${methodSelector(m,'log','')}${settingBlock(p?.grind||lastBrew(b?.id,m)?.grind||18.6,gId)}<div class="metric-grid"><label>Dose (g)<input id="dose" type="number" inputmode="decimal" step="0.1" value="${p?.dose||18}"></label>${isEsp?`<label>Yield (g)<input id="yieldOut" type="number" inputmode="decimal" step="0.1" value="${p?.yieldOut||36}"></label>`:`<label>Water (g)<input id="water" type="number" inputmode="numeric" step="1" value="${p?.water||320}" oninput="syncFinalPourWeight()"></label>`}</div><label>Temperature</label><input id="temp" type="number" inputmode="numeric" step="1" value="${temp}">${isPour?pourControls(p,b):timerBlock(bm)}${ratingBlock(7.5)}<label>Flavour Description</label><div class="select-grid">${flavourButtons()}</div>${logNotesSection(m)}<button class="btn full" onclick="saveBrew('${b?.id||''}','${m}')">Save Brew</button><button class="btn secondary full" onclick="saveDialedProfile('${b?.id||''}','${m}')">Save Dialed-In Profile</button><button class="btn secondary full" onclick="openRecipeEditor('bean','${b?.id||''}','${m}')">Create Recipe From This Log</button></section>`;
+}
+function openBeanDetail(id,modalOpen=true){
+ let b=bean(id); if(!b)return; if(!b.brewProfiles)b.brewProfiles={}; if(!b.brewProfiles[selectedMethod])selectedMethod=Object.keys(b.brewProfiles)[0]||'Espresso';
+ let p=activeProfile(b,selectedMethod), g=grinder(p?.grinderId||b.grinderId), recent=brewsFor(b.id,selectedMethod).slice(0,3);
+ const createButton=p?`<button class="btn secondary full" onclick="openRecipeEditor('bean','${b.id}','${selectedMethod}','${p.id}')">Create Recipe From This Profile</button>`:'';
+ const savedProfiles=`<section class="inner-card"><h3>Saved Profiles (${selectedMethod}) <button onclick="manageProfiles('${b.id}','${selectedMethod}')">Manage</button></h3><div class="saved-profiles">${(b.brewProfiles[selectedMethod]||[]).map(pr=>`<button class="${pr.active?'sel':''}" onclick="profileDetail('${b.id}','${selectedMethod}','${pr.id}')"><b>${esc(pr.name)}</b><small>${dateShort(pr.createdAt)} · ${pr.score||'—'} Score</small></button>`).join('')}<button class="add" onclick="profileForm('${b.id}','${selectedMethod}')">+<small>Add New</small></button></div></section>`;
+ const equipment=`<section class="inner-card"><h3>Equipment</h3><div class="equipment">${methodEquipmentCards(selectedMethod,g)}</div></section>`;
+ const recentBrews=`<section class="inner-card"><h3>Last 3 Brews <button onclick="showBeanHistory('${b.id}','${selectedMethod}')">View All (20)</button></h3><div class="mini-brews">${recent.map(x=>`<button onclick="brewDetail('${x.id}')"><small>${dateShort(x.createdAt)}</small><b>${x.rating||'—'}</b><span>${fmt(x.time||x.totalTime)}s</span></button>`).join('')||'<p>No brews yet.</p>'}</div></section>`;
+ let html=`<button class="back" onclick="closeModal()">${icon('back')}</button><button class="edit-icon modal-edit" onclick="openBeanForm('${b.id}')">${icon('pencil')}</button><div class="bean-hero"><button class="bag large ${b.photo?'has-photo':''}" onclick="pickPhoto('${b.id}')">${b.photo?`<img src="${b.photo}">`:'DF'}<em>${icon('camera')}</em></button><div><h1>${esc(b.name)}</h1><p>${esc([b.process,b.origin].filter(Boolean).join(' • '))}</p><span class="pill green">${b.status==='current'?'Current Bean':'Archived'}</span></div></div><h3>Brew Profiles</h3>${methodTabs(b,selectedMethod)}${profilePanel(b,selectedMethod,p,g)}${createButton}${savedProfiles}${equipment}${recentBrews}`;
+ if(modalOpen)modal(html); else {$('.modal').innerHTML=`<div class="modal-head"><span></span><button onclick="closeModal()">×</button></div>${html}`;bind();}
+}
+function recipeCard(r){
+ const flavours=(r.tags||[]).filter(t=>!brewMethods.includes(t)&&!['Light','Medium','Dark'].includes(t)).slice(0,3).join(', ');
+ const score=+(r.score||0);
+ return `<article class="recipe-card recipe-book-card click" onclick="recipeView('${r.id}')"><div class="recipe-thumb">${r.photo?`<img src="${r.photo}">`:brewSvg(baseMethod(r.method))}</div><div class="recipe-book-copy"><h3>${esc(r.title)}</h3><p>${esc([r.origin,r.process].filter(Boolean).join(' · ')||r.beanName||'Recipe')}</p><p>${esc(flavours||r.notes||'No flavour notes yet')}</p><div><span class="score-chip">☆ ${score?score.toFixed(1):'—'}</span><span class="method-chip">${esc(r.method)}</span></div></div><span class="recipe-chevron">›</span></article>`;
+}
+function recipesView(){
+ ensureCommunity(state);
+ const all=recipeResults(), mine=myRecipeBookRecipes(), shown=recipeTab==='library'?mine:all;
+ return `<section class="card recipes-head recipe-book-head"><h2>My Recipe Book</h2><p>Your personal collection of brew recipes.</p>${recipeBookOverview(mine)}<div class="recipe-book-actions"><button class="btn full" onclick="openRecipeEditor()">Create New Recipe</button><button class="btn secondary full" onclick="openRecipeBasisPicker()">Create From Dialed-In Bean</button></div></section><section class="card recipe-list-card"><div class="recipe-list-title"><h2>${recipeTab==='library'?'My Recipes':recipeTab==='discover'?'Discover':'Following'}</h2><button class="sort-pill" type="button">Sort⌄</button></div><div class="tabs recipe-tabs"><button class="${recipeTab==='library'?'sel':''}" onclick="recipeTab='library';render()">My Recipe Book</button><button class="${recipeTab==='discover'?'sel':''}" onclick="recipeTab='discover';render()">Discover</button><button class="${recipeTab==='following'?'sel':''}" onclick="recipeTab='following';render()">Following</button></div><input id="recipeSearch" placeholder="Search recipes, beans, flavours, brew type" value="${esc(recipeQuery)}" oninput="recipeQuery=this.value;drawRecipeList()"><div id="recipeList">${shown.map(recipeCard).join('')||'<p>No matching recipes yet.</p>'}</div></section>`;
+}
+const openBeanDetailCurrent = openBeanDetail;
+openBeanDetail=function(id,modalOpen=true){window.currentBeanDetailId=id;return openBeanDetailCurrent(id,modalOpen)}
+function methodEquipmentCards(method,g){const bm=baseMethod(method),m=methodEquipment(bm),beanId=window.currentBeanDetailId||currentBean()?.id||'',profile=activeProfile(bean(beanId),selectedMethod);const grinderSubtitle=[grinderManufacturer(g),grinderModel(g),g?.burrType==='Other'?g.burrOther:g?.burrType,g?.profile].filter(Boolean).join(' • ');return `<div class="equipment-list">${equipmentRow(grinderBurrSvg(),'Grinder',grinderSubtitle,`toggleBeanGrinders('${beanId}','${profile?.id||''}')`)}${equipmentRow(equipmentMethodSvg(bm),m.title,m.value,'editProfile()')}</div>`}
+function normRef(v=''){return String(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/['’`]/g,'').replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ')}
+async function seedJson(file){window.__seedCache=window.__seedCache||{};if(!window.__seedCache[file]){try{let r=await fetch(file);window.__seedCache[file]=r.ok?await r.json():null}catch(e){window.__seedCache[file]=null}}return window.__seedCache[file]}
+function scoreRefRows(rows,q){q=normRef(q);let seen=new Set();return rows.map(row=>{let score=0;(row.search||[]).map(normRef).forEach(f=>{if(f===q)score=Math.max(score,100);else if(f.startsWith(q))score=Math.max(score,80);else if(f.includes(q))score=Math.max(score,50)});return {...row,score}}).filter(r=>r.score>0).sort((a,b)=>b.score-a.score||String(a.label).localeCompare(String(b.label))).filter(r=>{let k=`${r.type}:${r.id}:${r.label}`;if(seen.has(k))return false;seen.add(k);return true})}
+async function localReferenceLookup(kind,...args){
+ const [q,a,b]=args;
+ const file=kind.startsWith('grinder')?'data/grinder-equipment-seed.json':'data/equipment-seed.json', seed=await seedJson(file); if(!seed)return null;
+ if(kind==='grinderManufacturers'){if(normRef(q).length<2)return [];let rows=[...(seed.manufacturers||[]).map(m=>({type:'manufacturer',id:m.id,manufacturerId:m.id,manufacturerName:m.canonical_name,label:m.canonical_name,source:'seed',search:[m.canonical_name,m.normalized_canonical_name]})),...(seed.aliases||[]).filter(x=>x.entity_type==='manufacturer').map(x=>({type:'manufacturer',id:x.entity_id,manufacturerId:x.entity_id,manufacturerName:(seed.manufacturers||[]).find(m=>m.id===x.entity_id)?.canonical_name,label:x.alias_text,source:'seed alias',search:[x.alias_text,x.normalized_alias_text]}))];return scoreRefRows(rows,q).slice(0,a||4)}
+ if(kind==='grinderModels'){let manufacturerId=a;if(normRef(q).length<1)return [];let models=(seed.grinder_models||[]).filter(m=>!manufacturerId||m.manufacturer_id===manufacturerId), rows=[...models.map(m=>({type:'grinder_model',id:m.id,modelId:m.id,manufacturerId:m.manufacturer_id,manufacturerName:m.manufacturer_name,modelName:m.canonical_name,label:m.display_name,source:'seed',search:[m.canonical_name,m.display_name,m.normalized_canonical_name,m.normalized_display_name]})),...(seed.aliases||[]).filter(x=>x.entity_type==='grinder_model').map(x=>{let m=(seed.grinder_models||[]).find(mm=>mm.id===x.entity_id);if(!m||manufacturerId&&m.manufacturer_id!==manufacturerId)return null;return{type:'grinder_model',id:m.id,modelId:m.id,manufacturerId:m.manufacturer_id,manufacturerName:m.manufacturer_name,modelName:m.canonical_name,label:x.alias_text,source:'seed alias',search:[x.alias_text,x.normalized_alias_text,m.canonical_name,m.display_name]}}).filter(Boolean)];return scoreRefRows(rows,q).slice(0,b||4)}
+ if(kind==='machineManufacturers'){if(normRef(q).length<2)return [];let rows=[...(seed.manufacturers||[]).map(m=>({type:'manufacturer',id:m.id,manufacturerId:m.id,manufacturerName:m.canonical_name,label:m.canonical_name,source:'seed',search:[m.canonical_name,m.normalized_canonical_name]})),...(seed.aliases||[]).filter(x=>x.entity_type==='manufacturer').map(x=>({type:'manufacturer',id:x.entity_id,manufacturerId:x.entity_id,manufacturerName:(seed.manufacturers||[]).find(m=>m.id===x.entity_id)?.canonical_name,label:x.alias_text,source:'seed alias',search:[x.alias_text,x.normalized_alias_text]}))];return scoreRefRows(rows,q).slice(0,a||4)}
+ if(kind==='machineModels'){let manufacturerId=a;if(normRef(q).length<1)return [];let models=(seed.machine_models||[]).filter(m=>!manufacturerId||m.manufacturer_id===manufacturerId), rows=[...models.map(m=>({type:'machine_model',id:m.id,modelId:m.id,manufacturerId:m.manufacturer_id,manufacturerName:(seed.manufacturers||[]).find(mm=>mm.id===m.manufacturer_id)?.canonical_name,modelName:m.canonical_name,label:m.display_name,source:'seed',search:[m.canonical_name,m.display_name,m.normalized_canonical_name,m.normalized_display_name]})),...(seed.aliases||[]).filter(x=>x.entity_type==='machine_model').map(x=>{let m=(seed.machine_models||[]).find(mm=>mm.id===x.entity_id);if(!m||manufacturerId&&m.manufacturer_id!==manufacturerId)return null;return{type:'machine_model',id:m.id,modelId:m.id,manufacturerId:m.manufacturer_id,manufacturerName:(seed.manufacturers||[]).find(mm=>mm.id===m.manufacturer_id)?.canonical_name,modelName:m.canonical_name,label:x.alias_text,source:'seed alias',search:[x.alias_text,x.normalized_alias_text,m.canonical_name,m.display_name]}}).filter(Boolean)];return scoreRefRows(rows,q).slice(0,b||4)}
+ return null;
+}
+async function referenceLookup(kind,...args){try{let api=window.BrewLibrarySupabase;if(api?.isConfigured?.()){let rows=await api[kind](...args);if(rows?.length)return rows}}catch(e){console.warn('Supabase reference lookup failed, using fallback',e)}return localReferenceLookup(kind,...args)}
+views.recipes=()=>recipesView();
+views.more=()=>moreView();
+ensureCommunity(state);
+render();
